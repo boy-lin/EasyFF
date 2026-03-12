@@ -1,0 +1,51 @@
+[package]
+name = "easyFF"
+version = "0.1.7"
+description = "A audio video kits app"
+authors = ["you"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "easyFF_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-deep-link = "2"
+tauri-plugin-process = "2"
+sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio"] }
+sea-query = "0.30"
+sea-query-binder = { version = "0.5", features = ["sqlx-sqlite"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+lazy_static = "1.4"
+tauri-plugin-log = "2"
+log = "0.4"
+tauri-plugin-opener = "2"
+dirs = "6"
+reqwest = { version = "0.11", default-features = false, features = [
+    "blocking",
+    "json",
+    "rustls-tls",
+] }
+zip = "0.6"
+tar = "0.4"
+xz2 = "0.1"
+futures = "0.3"
+machine-uid = "0.5.4"
+anyhow = "1"
+
+[target."cfg(target_os = \"macos\")".dependencies]
+cocoa = "0.26"

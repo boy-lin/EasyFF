@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image" href="/logo.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EasyFF</title>
+    <style>
+      .loader-wrapper {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 10px 20px;
+        padding-top: 20vh;
+      }
+.loader {
+  width: 42px;
+  aspect-ratio: 1;
+  --_c:no-repeat radial-gradient(farthest-side,#89CFF0 92%,#0000);
+  background: 
+    var(--_c) top,
+    var(--_c) left,
+    var(--_c) right,
+    var(--_c) bottom;
+  background-size: 12px 12px;
+  animation: l7 1s infinite;
+}
+@keyframes l7 {to{transform: rotate(.5turn)}}
+    </style>
+  </head>
+
+  <body>
+    <div id="root">
+      <div class="loader-wrapper">
+        <div class="loader"></div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

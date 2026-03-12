@@ -1,0 +1,196 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Light mode theme: generated from primary/accent */
+  --background: #ffffff;
+  --foreground: #1f3241;
+  --card: #ffffff;
+  --card-foreground: #1f3241;
+  --popover: #ffffff;
+  --popover-foreground: #1f3241;
+  --primary: #89CFF0;
+  --primary-foreground: #ffffff;
+  --secondary: #deecf6;
+  --secondary-foreground: #1f3241;
+  --muted: #ebf4fb;
+  --muted-foreground: #587083;
+  --accent: #B3CEE5;
+  --accent-foreground: hsl(0, 0%, 100%);
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: #ebebeb;
+  --input: #d7e8f4;
+  --ring: #75b6da;
+  --radius: 0.75rem;
+  --sidebar: #f0f0f4;
+  --sidebar-foreground: #1f3241;
+  --sidebar-primary: #b3cee5;
+  --sidebar-primary-foreground: #1f3241;
+  --sidebar-accent: #deecf6;
+  --sidebar-accent-foreground: #385a73;
+  --sidebar-border: #c8ddee;
+  --sidebar-ring: #75b6da;
+  --text-subtle: #587083;
+  --gradient-converter: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+  --gradient-downloader: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
+  --gradient-compressor: linear-gradient(135deg, #f43f5e 0%, #f97316 100%);
+  --shadow-card: 0 12px 35px rgba(15, 23, 42, 0.08);
+}
+
+.dark {
+  /* Dark mode theme: generated from primary/accent */
+  --background: #0b1220;
+  --foreground: #e7f2fb;
+  --card: #121b2b;
+  --card-foreground: #e7f2fb;
+  --popover: #121b2b;
+  --popover-foreground: #e7f2fb;
+  --primary: #FFDB58;
+  --primary-foreground: #1e2533;
+  --secondary: #1b2539;
+  --secondary-foreground: #d9e9f8;
+  --muted: #182336;
+  --muted-foreground: #9db6cb;
+  --accent: #89CFF0;
+  --accent-foreground: hsl(0, 0%, 100%);
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: #24324a;
+  --input: #1e2c42;
+  --ring: #89cff0;
+  --chart-1: #89cff0;
+  --chart-2: #b3cee5;
+  --chart-3: #ffdb58;
+  --chart-4: #7aa8c8;
+  --chart-5: #d9b84b;
+  --sidebar: #101a2b;
+  --sidebar-foreground: #e7f2fb;
+  --sidebar-primary: #89cff0;
+  --sidebar-primary-foreground: #0f1a2b;
+  --sidebar-accent: #1b2539;
+  --sidebar-accent-foreground: #d7e8f8;
+  --sidebar-border: #24324a;
+  --sidebar-ring: #89cff0;
+}
+
+
+@theme inline {
+  --font-sans: "Geist", "Geist Fallback";
+  --font-mono: "Geist Mono", "Geist Mono Fallback";
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html,
+  body {
+    @apply bg-background text-foreground;
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Custom gradient animations for hero section */
+@keyframes gradient-shift {
+
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.animate-gradient {
+  background-size: 200% 200%;
+  animation: gradient-shift 8s ease infinite;
+}
+
+.fx-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.35) transparent;
+}
+
+.fx-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.fx-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(100, 116, 139, 0.35);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.fx-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(100, 116, 139, 0.5);
+}
+
+.fx-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  width: 0px;
+  height: 0px;
+}
+
+.hide-scrollbar::-webkit-scrollbar-thumb {
+  background-color: transparent;
+}
+
+:root {
+  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: 0.75s;
+}
+
+.logo.tauri:hover {
+  filter: drop-shadow(0 0 2em #24c8db);
+}
