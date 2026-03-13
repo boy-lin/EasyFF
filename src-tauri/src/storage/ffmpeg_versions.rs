@@ -215,16 +215,6 @@ pub async fn list(
     let pool = get_db().await?;
     let limit = limit.clamp(1, 200);
 
-    eprintln!(
-        "[ffmpeg_versions::list] source={:?}, os={:?}, arch={:?}, keyword={:?}, limit={}, offset={}",
-        source.as_deref(),
-        os.as_deref(),
-        arch.as_deref(),
-        keyword.as_deref(),
-        limit,
-        offset
-    );
-
     let mut query = QueryBuilder::<Sqlite>::new(
         "SELECT row_key, source, os, version, published_at, download_url, arch, local_path, updated_at, download_state, installed, is_active FROM ffmpeg_versions WHERE 1=1",
     );

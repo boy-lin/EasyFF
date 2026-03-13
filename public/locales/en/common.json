@@ -1,4 +1,4 @@
-{
+﻿{
   "app": {
     "description": "Powerful Media Toolkit",
     "title": "FigureX"
@@ -14,6 +14,7 @@
     "audio_test": "Audio Test",
     "home": "Home",
     "my_files": "My Files",
+    "favorite_commands": "Favorite",
     "home_v1": "Home V1",
     "metadata": "Metadata"
   },
@@ -26,7 +27,7 @@
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
     "brand_name": "EasyFF",
-    "brand_tagline": "AudioVideoKits"
+    "brand_tagline": "FFmpegGui"
   },
   "quick": {
     "converter": "Converter",
@@ -153,3 +154,5 @@
     }
   }
 }
+
+

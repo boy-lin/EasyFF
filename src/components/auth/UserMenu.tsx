@@ -12,8 +12,9 @@ import { Loader2, LogOut } from "lucide-react";
 import ProfileLinear from "@/components/icons/ProfileLinear";
 import { AuthDialog } from "@/components/auth/AuthDialog";
 import { Badge } from "@/components/ui/badge";
-import { signOut, useSession } from "@/lib/auth-client";
+import { signOut } from "@/lib/auth-client";
 import { clearDesktopToken, hasDesktopAccessToken } from "@/lib/desktop-auth";
+import { useFavoriteSyncStore } from "@/stores/favoriteSyncStore";
 import { useUserStore } from "@/stores/user";
 import { toast } from "sonner";
 import { analytics } from "@/lib/analytics";
@@ -21,15 +22,16 @@ import { useTranslation } from "react-i18next";
 
 export const UserMenu = () => {
   const { t } = useTranslation("common");
-  const { data: session, isPending } = useSession();
-  const { userInfo, isTokenPreview, isProfileRefreshing, fetchUserInfo, clearUser } = useUserStore();
+  const { isLoading, userInfo, isTokenPreview, isProfileRefreshing, fetchUserInfo, clearUser } = useUserStore();
+  const syncFavoriteNow = useFavoriteSyncStore((s) => s.syncNow);
+  const resetFavoriteSyncState = useFavoriteSyncStore((s) => s.resetSyncState);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [desktopLoggedIn, setDesktopLoggedIn] = useState(hasDesktopAccessToken());
   const prevRefreshingRef = useRef(false);
-  const isLoggedIn = Boolean(session?.user) || desktopLoggedIn;
+  const isLoggedIn =  desktopLoggedIn;
   const displayName = useMemo(
-    () => userInfo?.name || session?.user?.name || session?.user?.email || t("auth.user_menu.default_user"),
-    [session?.user, t, userInfo]
+    () => userInfo?.name  || t("auth.user_menu.default_user"),
+    [userInfo]
   );
   useEffect(() => {
     if (isLoggedIn) {
@@ -37,7 +39,7 @@ export const UserMenu = () => {
         toast.error(e.message || t("auth.user_menu.toast.fetch_user_failed"));
       });
     }
-  }, [isLoggedIn, fetchUserInfo, t]);
+  }, [isLoggedIn, fetchUserInfo]);
 
   useEffect(() => {
     setDesktopLoggedIn(hasDesktopAccessToken());
@@ -61,7 +63,7 @@ export const UserMenu = () => {
       window.removeEventListener("desktop-auth:success", handleDesktopAuthSuccess);
       window.removeEventListener("desktop-auth:error", handleDesktopAuthError as EventListener);
     };
-  }, [fetchUserInfo, t]);
+  }, []);
 
   useEffect(() => {
     if (!isLoggedIn) {
@@ -81,30 +83,36 @@ export const UserMenu = () => {
   }, [isLoggedIn, isProfileRefreshing, isTokenPreview, t]);
 
   useEffect(() => {
-    if (session?.user?.id) {
-      analytics.identify(session.user.id, {
-        email: session.user.email,
-        name: session.user.name,
+    if (userInfo?.id) {
+      analytics.identify(userInfo.id, {
+        email: userInfo.email,
+        name: userInfo.name,
       });
     }
-  }, [session?.user?.id, session?.user?.email, session?.user?.name]);
+  }, [userInfo?.id, userInfo?.email, userInfo?.name]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !hasDesktopAccessToken()) return;
+    syncFavoriteNow({ silent: true }).catch(() => undefined);
+  }, [isLoggedIn, syncFavoriteNow]);
 
   const handleLogout = async () => {
     try {
-      if (session?.user) {
+      if (userInfo) {
         await signOut();
       }
       analytics.reset();
       clearDesktopToken();
       setDesktopLoggedIn(false);
       clearUser();
+      resetFavoriteSyncState();
       toast.success(t("auth.user_menu.toast.signed_out"));
     } catch (e) {
       toast.error(t("auth.user_menu.toast.sign_out_failed"));
     }
   };
 
-  if (isPending) {
+  if (isLoading) {
     return (
       <Button variant="secondary" size="icon" className="shadow-none" disabled>
         <Loader2 className="w-4 h-4 animate-spin" />
@@ -144,9 +152,9 @@ export const UserMenu = () => {
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel className="flex flex-col">
           <span className="font-semibold text-foreground">{displayName}</span>
-          {(session?.user?.email || userInfo?.email) && (
+          {(userInfo?.email) && (
             <span className="text-xs text-muted-foreground">
-              {session?.user?.email || userInfo?.email}
+              {userInfo?.email}
             </span>
           )}
           {isProfileRefreshing && (

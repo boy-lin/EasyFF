@@ -223,6 +223,7 @@ pub fn run() {
             crate::commands::list_ffmpeg_versions,
             crate::commands::list_installed_ffmpeg_versions,
             crate::commands::download_ffmpeg_version,
+            crate::commands::cancel_ffmpeg_download,
             crate::commands::update_ffmpeg_download_state,
             crate::commands::activate_ffmpeg_version,
             crate::commands::delete_ffmpeg_version,
@@ -230,6 +231,12 @@ pub fn run() {
             crate::commands::list_favorite_commands,
             crate::commands::create_favorite_command,
             crate::commands::delete_favorite_command,
+            crate::commands::list_favorite_commands_for_sync,
+            crate::commands::list_pending_favorite_command_sync,
+            crate::commands::apply_remote_favorite_command_changes,
+            crate::commands::mark_favorite_commands_synced,
+            crate::commands::get_favorite_command_sync_cursor,
+            crate::commands::set_favorite_command_sync_cursor,
         ])
         .setup(move |app| {
             spawn_single_instance_listener(single_instance_listener, app.handle().clone());

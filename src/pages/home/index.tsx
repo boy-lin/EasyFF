@@ -1,8 +1,7 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+﻿import { useEffect, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { open } from "@tauri-apps/plugin-dialog";
-import { FolderOpen } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { FolderOpen, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -23,170 +22,33 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { bridge, type FavoriteCommandItem } from "@/lib/bridge";
-import { getMediaTaskQueue } from "@/lib/mediaTaskQueue";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { MediaTaskType } from "@/types/tasks";
 import { toast } from "sonner";
 import { useUiStatus } from "@/hooks/useUiStatus";
 import { FavoriteCommandList } from "@/pages/home/components/FavoriteCommandList";
-
-function splitCommand(input: string): string[] {
-  const result: string[] = [];
-  const regex = /"([^"]*)"|'([^']*)'|(\S+)/g;
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(input)) !== null) {
-    result.push(match[1] ?? match[2] ?? match[3]);
-  }
-  return result;
-}
-
-function quoteArg(arg: string): string {
-  if (arg.includes(" ") || arg.includes("\t") || arg.includes('"')) {
-    return `"${arg.replaceAll('"', '\\"')}"`;
-  }
-  return arg;
-}
-
-function pickOutputExt(oldOutput: string | undefined, firstInput: string | undefined): string {
-  const fromOutput = oldOutput?.match(/\.([A-Za-z0-9]+)$/)?.[1];
-  if (fromOutput) return fromOutput;
-  const fromInput = firstInput?.match(/\.([A-Za-z0-9]+)$/)?.[1];
-  if (fromInput) return fromInput;
-  return "mp4";
-}
-
-const FFMPEG_NO_VALUE_OPTIONS = new Set([
-  "-y",
-  "-n",
-  "-vn",
-  "-an",
-  "-sn",
-  "-dn",
-  "-shortest",
-  "-hide_banner",
-  "-nostdin",
-  "-stats",
-  "-copyts",
-]);
-
-function optionTakesValue(token: string): boolean {
-  if (!token.startsWith("-")) return false;
-  if (FFMPEG_NO_VALUE_OPTIONS.has(token)) return false;
-  return true;
-}
-
-function normalizeDir(dir: string): string {
-  return dir.replace(/[\\/]$/, "");
-}
-
-function detectPathSeparator(dir: string): "/" | "\\" {
-  // Windows drive/UNC path or explicit backslash style => '\'
-  if (/^[A-Za-z]:[\\/]/.test(dir) || dir.startsWith("\\\\") || dir.includes("\\")) {
-    return "\\";
-  }
-  return "/";
-}
-
-function joinPath(dir: string, filename: string): string {
-  const base = normalizeDir(dir);
-  if (!base) return filename;
-  const sep = detectPathSeparator(base);
-  return `${base}${sep}${filename}`;
-}
+import { useFfmpegStore } from "@/stores/ffmpegStore";
+import { useFavoriteSyncStore } from "@/stores/favoriteSyncStore";
+import { FfmpegRuntimeStatus } from "@/components/ffmpeg/FfmpegRuntimeStatus";
+import { VirtualLogViewer } from "@/components/logs/VirtualLogViewer";
+import { buildCommandText } from "@/pages/home/lib/commandComposer";
+import { useCliTaskRunner } from "@/pages/home/hooks/useCliTaskRunner";
+import { useTranslation } from "react-i18next";
 
 function formatDateTime(ts: number): string {
   if (!Number.isFinite(ts) || ts <= 0) return "";
   return new Date(ts).toLocaleString();
 }
 
-function buildCommandText(
-  raw: string,
-  inputPaths: string[],
-  outputDir: string,
-): { text: string; outputPath: string } {
-  const tokens = splitCommand(raw);
-  if (tokens.length === 0) {
-    return { text: raw, outputPath: "" };
-  }
-
-  const command = tokens[0];
-  const srcArgs = tokens.slice(1);
-  const transformedArgs: string[] = [];
-  const oldOutputs: string[] = [];
-
-  for (let i = 0; i < srcArgs.length; i += 1) {
-    const token = srcArgs[i];
-
-    if (token === "-i") {
-      i += 1;
-      continue;
-    }
-
-    if (token.startsWith("-")) {
-      transformedArgs.push(token);
-      if (optionTakesValue(token) && i + 1 < srcArgs.length) {
-        i += 1;
-        transformedArgs.push(srcArgs[i]);
-      }
-      continue;
-    }
-
-    oldOutputs.push(token);
-    transformedArgs.push(`__OUT_${oldOutputs.length - 1}__`);
-  }
-
-  const generatedOutputs: string[] = [];
-  if (outputDir) {
-    const outputCount = oldOutputs.length > 0 ? oldOutputs.length : 1;
-    const ts = Date.now();
-    for (let i = 0; i < outputCount; i += 1) {
-      const oldOutput = oldOutputs[i];
-      const ext = pickOutputExt(oldOutput, inputPaths[0]);
-      const suffix = outputCount > 1 ? `-${i + 1}` : "";
-      const filename = `output-${ts}${suffix}.${ext}`;
-      generatedOutputs.push(joinPath(outputDir, filename));
-    }
-  } else {
-    generatedOutputs.push(...oldOutputs);
-  }
-
-  let outputPath = generatedOutputs[0] ?? "";
-
-  const nextArgs: string[] = [];
-  inputPaths.forEach((p) => {
-    nextArgs.push("-i", p);
-  });
-  let outIndex = 0;
-  transformedArgs.forEach((arg) => {
-    if (arg.startsWith("__OUT_")) {
-      const resolved = generatedOutputs[outIndex] ?? generatedOutputs[0];
-      outIndex += 1;
-      if (resolved) nextArgs.push(resolved);
-      return;
-    }
-    nextArgs.push(arg);
-  });
-
-  if (oldOutputs.length === 0 && outputPath) {
-    nextArgs.push(outputPath);
-  }
-
-  const text = [command, ...nextArgs.map(quoteArg)].join(" ");
-  return { text, outputPath };
-}
-
 export default function Home() {
-  const [ffmpegVersion, setFfmpegVersion] = useState<string>("读取中...");
+  const { t } = useTranslation("ffmpeg");
+  const [searchParams, setSearchParams] = useSearchParams();
   const [commandText, setCommandText] = useState<string>(
-    "ffmpeg -i input.mp4 -vf scale=1280:720 -c:v libx264 output.mp4",
+    t("homePage.defaultCommand"),
   );
   const [inputPaths, setInputPaths] = useState<string[]>([]);
   const [resolvedOutputPath, setResolvedOutputPath] = useState<string>("");
-  const [currentTaskId, setCurrentTaskId] = useState<string>("");
-  const [currentProgress, setCurrentProgress] = useState<number>(0);
-  const [running, setRunning] = useState<boolean>(false);
-  const [lastTaskCompleted, setLastTaskCompleted] = useState<boolean>(false);
   const { status, className: statusClassName, setStatus } = useUiStatus();
+  const { execute, running, taskLogs, lastTaskCompleted } = useCliTaskRunner(setStatus);
   const [favoriteCommands, setFavoriteCommands] = useState<FavoriteCommandItem[]>([]);
   const [favoriteDialogOpen, setFavoriteDialogOpen] = useState<boolean>(false);
   const [favoriteTitle, setFavoriteTitle] = useState<string>("");
@@ -197,8 +59,17 @@ export default function Home() {
   const settingsLoading = useSettingsStore((s) => s.isLoading);
   const initSettings = useSettingsStore((s) => s.init);
   const setOutputPath = useSettingsStore((s) => s.setOutputPath);
+  const ffmpegExecutablePath = useFfmpegStore((s) => s.runtimeExecutablePath);
+  const ffmpegInstalled = useFfmpegStore((s) => s.installedVersions);
+  const ffmpegEnsureStage = useFfmpegStore((s) => s.ensureStage);
+  const initFfmpegStore = useFfmpegStore((s) => s.init);
+  const ensureFfmpegReady = useFfmpegStore((s) => s.ensureReadyForHome);
+  const scheduleFavoriteSync = useFavoriteSyncStore((s) => s.scheduleSync);
 
-  const queue = useMemo(() => getMediaTaskQueue(), []);
+  const ffmpegPreparing =
+    ffmpegEnsureStage === "checking" ||
+    ffmpegEnsureStage === "downloading" ||
+    ffmpegEnsureStage === "activating";
 
   useEffect(() => {
     initSettings().catch((error) => {
@@ -210,60 +81,60 @@ export default function Home() {
     let cancelled = false;
     const run = async () => {
       try {
-        const version = await bridge.getCurrentFfmpegVersion();
-        if (!cancelled) setFfmpegVersion(version || "unknown");
-      } catch {
-        if (!cancelled) setFfmpegVersion("unknown");
+        await initFfmpegStore();
+        await ensureFfmpegReady();
+      } catch (error) {
+        if (cancelled) return;
+        const message =
+          error instanceof Error ? error.message : t("homePage.toast.init_failed");
+        setStatus({ text: message, kind: "error" });
       }
     };
     run();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [initFfmpegStore, ensureFfmpegReady, setStatus, t]);
 
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
       try {
-        const list = await bridge.listFavoriteCommands(100, 0);
+        const list = await bridge.listFavoriteCommands(6, 0);
         if (!cancelled) setFavoriteCommands(list);
       } catch {
-        if (!cancelled) setStatus({ text: "读取收藏命令失败", kind: "error" });
+        toast.error(t("homePage.toast.get_favorites_failed"));
       }
     };
     run();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [t]);
 
   useEffect(() => {
-    const off = queue.on((event) => {
-      if (!currentTaskId || event.task_id !== currentTaskId) return;
-      if (event.event_type === "progress") {
-        setCurrentProgress(event.progress ?? 0);
-        setStatus({ text: `执行中 ${event.progress ?? 0}%`, kind: "progress" });
-      } else if (event.event_type === "complete") {
-        setCurrentProgress(100);
-        setRunning(false);
-        setLastTaskCompleted(true);
-        setStatus({ text: "执行完成", kind: "success" });
-      } else if (event.event_type === "error") {
-        setRunning(false);
-        setLastTaskCompleted(false);
-        setStatus({ text: event.error_message || "执行失败", kind: "error" });
-      }
-    });
-    return () => off();
-  }, [queue, currentTaskId]);
+    const incoming = searchParams.get("commandText");
+    if (!incoming) return;
+    const nextCommand = incoming.trim();
+    if (nextCommand) {
+      setCommandText(nextCommand);
+      window.setTimeout(() => {
+        const el = commandInputRef.current;
+        if (!el) return;
+        el.focus();
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 0);
+    }
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("commandText");
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     if (!outputDir || inputPaths.length === 0) return;
     const rebuilt = buildCommandText(commandText, inputPaths, outputDir);
     setCommandText(rebuilt.text);
     setResolvedOutputPath(rebuilt.outputPath);
-    // Only react to output directory changes from settings cache.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outputDir]);
 
@@ -272,7 +143,7 @@ export default function Home() {
       multiple: true,
       filters: [
         {
-          name: "Media",
+          name: t("homePage.media_filter_name"),
           extensions: ["mp4", "mov", "mkv", "avi", "mp3", "wav", "flac", "m4a"],
         },
       ],
@@ -303,62 +174,52 @@ export default function Home() {
     setResolvedOutputPath(rebuilt.outputPath);
   };
 
+  const isGlobalFfmpegCommand = (value: string): boolean => {
+    const v = value.trim().toLowerCase();
+    return v === "ffmpeg" || v === "ffmpeg.exe";
+  };
+
   const resolveActiveFfmpegExecutable = async (): Promise<string> => {
     try {
-      const runtime = await bridge.getCurrentFfmpegRuntimeInfo();
-      if (runtime.executablePath?.trim()) {
-        return runtime.executablePath;
+      const active = ffmpegInstalled.find((item) => item.isActive && !!item.localPath?.trim());
+      if (active?.localPath?.trim()) return active.localPath.trim();
+
+      if (ffmpegExecutablePath?.trim() && !isGlobalFfmpegCommand(ffmpegExecutablePath)) {
+        return ffmpegExecutablePath.trim();
       }
-      const installed = await bridge.listInstalledFfmpegVersions();
-      const active = installed.find((item) => item.isActive && !!item.localPath?.trim());
-      if (active?.localPath) return active.localPath;
+
+      const runtime = await bridge.getCurrentFfmpegRuntimeInfo();
+      if (runtime.executablePath?.trim() && !isGlobalFfmpegCommand(runtime.executablePath)) {
+        return runtime.executablePath.trim();
+      }
     } catch (error) {
       console.warn("resolve active ffmpeg failed:", error);
     }
-    return "ffmpeg";
+    throw new Error(t("homePage.toast.ffmpeg_not_ready"));
   };
 
   const handleExecute = async () => {
-    if (inputPaths.length === 0 || !outputDir) {
-      setStatus({ text: "请先选择输入文件和输出目录", kind: "warning" });
+    if (ffmpegPreparing) {
+      toast.info(t("homePage.toast.ffmpeg_preparing"));
       return;
     }
-
-    const tokens = splitCommand(commandText);
-    if (tokens.length === 0) {
-      setStatus({ text: "命令不能为空", kind: "warning" });
+    if (ffmpegEnsureStage !== "ready") {
+      await ensureFfmpegReady();
+      if (useFfmpegStore.getState().ensureStage !== "ready") {
+        toast.warning(t("homePage.toast.ffmpeg_not_ready"));
+        return;
+      }
+    }
+    if (!commandText) {
+      toast.warning(t("homePage.toast.command_empty"));
       return;
     }
-
-    const command = await resolveActiveFfmpegExecutable();
-    const args = tokens[0]?.startsWith("-") ? tokens : tokens.slice(1);
-    const taskId = `cli-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-    setCurrentTaskId(taskId);
-    setCurrentProgress(0);
-    setRunning(true);
-    setLastTaskCompleted(false);
-    setStatus({ text: "任务已提交", kind: "info" });
-
-    try {
-      await queue.submitCliTask({
-        task_id: taskId,
-        task_type: MediaTaskType.Ffmpeg,
-        command,
-        args,
-        input_path: inputPaths[0],
-        output_dir: outputDir,
-      });
-    } catch (e) {
-      setRunning(false);
-      toast.error(e instanceof Error ? e.message : "提交失败");
-      setStatus({ text: e instanceof Error ? e.message : "提交失败", kind: "error" });
-    }
-  };
-
-  const copyCommand = async () => {
-    await navigator.clipboard.writeText(commandText);
-    setStatus({ text: "命令已复制", kind: "success" });
+    await execute({
+      commandText,
+      inputPaths,
+      outputDir,
+      resolveExecutable: resolveActiveFfmpegExecutable,
+    });
   };
 
   const revealOutputInDir = async () => {
@@ -366,14 +227,13 @@ export default function Home() {
     try {
       await bridge.revealItemInDirFallback(resolvedOutputPath);
     } catch (e) {
-      const message = e instanceof Error ? e.message : "打开目录失败";
+      const message = e instanceof Error ? e.message : t("homePage.toast.open_output_failed");
       toast.error(message);
-      setStatus({ text: message, kind: "error" });
     }
   };
 
   const openFavoriteDialog = () => {
-    const suggestedTitle = commandText.trim().slice(0, 32) || "未命名命令";
+    const suggestedTitle = commandText.trim().slice(0, 32) || t("homePage.favorites.unnamed_command");
     setFavoriteTitle(suggestedTitle);
     setFavoriteDescription("");
     setFavoriteDialogOpen(true);
@@ -383,11 +243,11 @@ export default function Home() {
     const title = favoriteTitle.trim();
     const command = commandText.trim();
     if (!title) {
-      setStatus({ text: "请输入命令标题", kind: "warning" });
+      toast.warning(t("homePage.toast.favorite_title_required"));
       return;
     }
     if (!command) {
-      setStatus({ text: "命令不能为空", kind: "warning" });
+      toast.warning(t("homePage.toast.command_empty"));
       return;
     }
 
@@ -399,10 +259,11 @@ export default function Home() {
         command,
       });
       setFavoriteCommands((prev) => [item, ...prev]);
+      scheduleFavoriteSync();
       setFavoriteDialogOpen(false);
-      setStatus({ text: "收藏成功", kind: "success" });
+      toast.success(t("homePage.toast.favorite_saved"));
     } catch (e) {
-      setStatus({ text: e instanceof Error ? e.message : "收藏失败", kind: "error" });
+      toast.error(e instanceof Error ? e.message : t("homePage.toast.favorite_save_failed"));
     } finally {
       setFavoriteSaving(false);
     }
@@ -410,7 +271,10 @@ export default function Home() {
 
   const handleSelectFavoriteCommand = (selected: FavoriteCommandItem) => {
     setCommandText(selected.command);
-    setStatus({ text: `已载入收藏命令：${selected.title}`, kind: "info" });
+    setStatus({
+      text: t("homePage.toast.favorite_loaded", { title: selected.title }),
+      kind: "info",
+    });
     window.setTimeout(() => {
       const el = commandInputRef.current;
       if (!el) return;
@@ -420,85 +284,95 @@ export default function Home() {
   };
 
   return (
-    <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6">
+    <main className="mx-auto w-full max-w-5xl space-y-4 px-4 py-2">
       <section className="space-y-2">
         <div className="flex items-end gap-2">
-          <h1 className="text-3xl font-bold tracking-tight">FFmpeg</h1>
+          <h1 className="text-lg font-bold tracking-tight">FFmpeg</h1>
+          <FfmpegRuntimeStatus />
           <Button asChild variant="link" className="h-auto p-0 text-sm">
-            <Link to="/ffmpeg/version-manager">版本管理</Link>
+            <Link to="/ffmpeg/version-manager">{t("homePage.actions.version_manager")}</Link>
           </Button>
         </div>
-        <Badge variant="secondary">{ffmpegVersion}</Badge>
+      </section>
+
+      <section className="space-y-2">
+        <Textarea
+          ref={commandInputRef}
+          className="min-h-24 font-mono text-sm"
+          value={commandText}
+          onChange={(e) => setCommandText(e.target.value)}
+        />
+
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            onClick={handleExecute}
+            disabled={!commandText || running || ffmpegPreparing}
+          >
+            {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {t("homePage.actions.execute")}
+          </Button>
+          <Button type="button" variant="secondary" onClick={pickInputFile}>
+            {t("homePage.actions.select_input")}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={pickOutputDir}
+            disabled={settingsLoading}
+          >
+            {t("homePage.actions.select_output")}
+          </Button>
+          <Button type="button" variant="secondary" onClick={openFavoriteDialog}>
+            {t("homePage.actions.save_favorite")}
+          </Button>
+        </div>
+
+        <p className="text-xs text-muted-foreground break-all">
+          {t("homePage.labels.input")}: {inputPaths.length > 0 ? inputPaths.join(" ; ") : t("homePage.labels.not_selected")}
+        </p>
+        <p className="text-xs text-muted-foreground break-all">
+          {t("homePage.labels.output")}: {outputDir || t("homePage.labels.not_selected")}
+        </p>
+        <div className="space-y-1">
+          <div className="text-muted-foreground flex items-center gap-1">
+            <span className="font-bold text-sm">{t("homePage.labels.realtime_logs")}</span>
+            {status.text && (
+              <div
+                className={`rounded-md border px-2 py-0 text-xs transition-colors ${statusClassName}`}
+              >
+                {status.text}
+              </div>
+            )}
+          </div>
+          <VirtualLogViewer
+            lines={taskLogs}
+            height={192}
+            rowHeight={22}
+            emptyText={t("homePage.viewer.empty")}
+            backToBottomText={t("homePage.viewer.back_to_bottom")}
+          />
+        </div>
+        {resolvedOutputPath && lastTaskCompleted && (
+          <div className="flex items-center gap-1 text-xs text-muted-foreground break-all">
+            <span>{t("homePage.labels.output_file")}: {resolvedOutputPath}</span>
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-5 px-1"
+              onClick={revealOutputInDir}
+              title={t("homePage.actions.open_output_folder")}
+            >
+              <FolderOpen className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        )}
       </section>
 
       <Card>
-        <CardHeader className="pb-2">
-          <CardTitle>FFmpeg 命令执行</CardTitle>
-          <CardDescription>选择输入/输出后会自动重建参数，不在执行时再替换</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Textarea
-            ref={commandInputRef}
-            className="min-h-24 font-mono text-sm"
-            value={commandText}
-            onChange={(e) => setCommandText(e.target.value)}
-          />
-
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" onClick={handleExecute} disabled={!commandText || running}>
-              {running ? `执行中 ${currentProgress}%` : "执行命令"}
-            </Button>
-            <Button type="button" variant="secondary" onClick={pickInputFile}>
-              选择输入文件
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={pickOutputDir}
-              disabled={settingsLoading}
-            >
-              选择输出目录
-            </Button>
-            <Button type="button" variant="secondary" onClick={copyCommand}>
-              复制命令
-            </Button>
-            <Button type="button" variant="secondary" onClick={openFavoriteDialog}>
-              收藏命令
-            </Button>
-          </div>
-
-          <p className="text-xs text-muted-foreground break-all">
-            输入: {inputPaths.length > 0 ? inputPaths.join(" ; ") : "未选择"}
-          </p>
-          <p className="text-xs text-muted-foreground break-all">输出目录: {outputDir || "未选择"}</p>
-          <div className="flex items-center gap-1 text-xs text-muted-foreground break-all">
-            <span>输出文件: {resolvedOutputPath || "未生成"}</span>
-            {resolvedOutputPath && lastTaskCompleted && (
-              <Button
-                type="button"
-                variant="ghost"
-                className="h-5 px-1"
-                onClick={revealOutputInDir}
-                title="打开文件所在目录"
-              >
-                <FolderOpen className="h-3.5 w-3.5" />
-              </Button>
-            )}
-          </div>
-          {status.text && (
-            <div
-              className={`rounded-md border px-2 py-1 text-xs transition-colors ${statusClassName}`}
-            >
-              {status.text}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
         <CardHeader className="">
-          <CardTitle>收藏命令</CardTitle>
-          <CardDescription>常用命令快速回看</CardDescription>
+          <CardTitle>{t("homePage.favorites.title")}</CardTitle>
+          <CardDescription>{t("homePage.favorites.desc")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <FavoriteCommandList
@@ -512,27 +386,27 @@ export default function Home() {
       <Dialog open={favoriteDialogOpen} onOpenChange={setFavoriteDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>收藏命令</DialogTitle>
-            <DialogDescription>填写标题和可选描述，保存当前命令。</DialogDescription>
+            <DialogTitle>{t("homePage.dialog.title")}</DialogTitle>
+            <DialogDescription>{t("homePage.dialog.desc")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-2">
-              <Label htmlFor="favorite-title">命令标题</Label>
+              <Label htmlFor="favorite-title">{t("homePage.dialog.title_label")}</Label>
               <Input
                 id="favorite-title"
                 value={favoriteTitle}
                 onChange={(e) => setFavoriteTitle(e.target.value)}
-                placeholder="例如：HEVC 转码"
+                placeholder={t("homePage.dialog.title_placeholder")}
                 maxLength={80}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="favorite-description">描述（可选）</Label>
+              <Label htmlFor="favorite-description">{t("homePage.dialog.desc_label")}</Label>
               <Textarea
                 id="favorite-description"
                 value={favoriteDescription}
                 onChange={(e) => setFavoriteDescription(e.target.value)}
-                placeholder="简要说明这个命令的用途"
+                placeholder={t("homePage.dialog.desc_placeholder")}
                 className="min-h-20"
               />
             </div>
@@ -544,10 +418,10 @@ export default function Home() {
               onClick={() => setFavoriteDialogOpen(false)}
               disabled={favoriteSaving}
             >
-              取消
+              {t("homePage.actions.cancel")}
             </Button>
             <Button type="button" onClick={saveFavoriteCommand} disabled={favoriteSaving}>
-              {favoriteSaving ? "保存中..." : "保存收藏"}
+              {favoriteSaving ? t("homePage.actions.saving") : t("homePage.actions.save")}
             </Button>
           </DialogFooter>
         </DialogContent>

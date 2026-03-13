@@ -1,0 +1,162 @@
+﻿{
+    "common":  {
+                   "na":  "-"
+               },
+    "labels":  {
+                   "os":  {
+                              "windows":  "Windows",
+                              "linux":  "Linux",
+                              "macos":  "macOS"
+                          },
+                   "arch":  {
+                                "apple_silicon":  "Apple Silicon",
+                                "intel":  "Intel",
+                                "x64":  "x64",
+                                "arm64":  "ARM64"
+                            }
+               },
+    "status":  {
+                   "common":  {
+                                  "downloading":  "Downloading",
+                                  "failed":  "Failed"
+                              },
+                   "installed":  {
+                                     "active":  "Active",
+                                     "installed":  "Installed"
+                                 },
+                   "remote":  {
+                                  "downloaded":  "Downloaded",
+                                  "not_downloaded":  "Not downloaded"
+                              }
+               },
+    "toast":  {
+                  "load_list_failed":  "Failed to load FFmpeg list",
+                  "download_failed":  "FFmpeg download failed",
+                  "cancel_download_failed":  "Failed to cancel download",
+                  "activated":  "FFmpeg switched to selected version",
+                  "activate_failed":  "Activation failed",
+                  "deleted":  "Version deleted",
+                  "delete_failed":  "Delete failed"
+              },
+    "table":  {
+                  "source":  "Source",
+                  "version":  "Version",
+                  "release_date":  "Release date",
+                  "arch":  "Architecture",
+                  "status":  "Status",
+                  "actions":  "Actions"
+              },
+    "page":  {
+                 "title":  "FFmpeg Static Build Version Manager",
+                 "description":  "Download remote static builds, keep cached states, and manage the active version."
+             },
+    "installed":  {
+                      "title":  "Installed versions",
+                      "description":  "Manage activation and deletion here. Status stays intact after refresh.",
+                      "empty":  "No installed FFmpeg versions."
+                  },
+    "remote":  {
+                   "title":  "Remote available versions",
+                   "description":  "This list contains all available sources."
+               },
+    "actions":  {
+                    "canceling":  "Canceling...",
+                    "cancel_download":  "Cancel download",
+                    "downloaded":  "Downloaded",
+                    "download":  "Download",
+                    "in_use":  "In use",
+                    "activate":  "Activate",
+                    "delete":  "Delete"
+                },
+    "confirm":  {
+                    "overwrite_download":  {
+                                               "title":  "Confirm overwrite download",
+                                               "description":  "Version {{version}} is already downloaded. Redownload and overwrite local files?",
+                                               "cancel":  "Cancel",
+                                               "confirm":  "Overwrite download"
+                                           }
+                },
+    "runtime":  {
+                    "badge":  {
+                                  "checking":  "Checking...",
+                                  "activating":  "Activating...",
+                                  "downloading":  "Downloading",
+                                  "error":  "failed",
+                                  "ready":  "FFmpeg is ready",
+                                  "idle":  "Loading..."
+                              },
+                    "detail":  {
+                                   "checking":  "Checking FFmpeg environment...",
+                                   "activating":  "Activating FFmpeg...",
+                                   "downloading":  "Downloading FFmpeg",
+                                   "error":  "FFmpeg initialization failed",
+                                   "ready":  "FFmpeg is ready",
+                                   "idle":  "Waiting for initialization..."
+                               },
+                    "actions":  {
+                                    "canceling":  "Canceling...",
+                                    "cancel_download":  "Abort download"
+                                },
+                    "toast":  {
+                                  "cancel_download_failed":  "Failed to abort download"
+                              }
+                },
+    "source":  {
+                   "loading":  "Loading...",
+                   "query_failed":  "Query failed.",
+                   "loaded_count":  "Loaded {{count}} records."
+               },
+    "homePage":  {
+                     "defaultCommand":  "ffmpeg -i input.mp4 -vf scale=1280:720 -c:v libx264 output.mp4",
+                     "media_filter_name":  "Media",
+                     "actions":  {
+                                     "version_manager":  "Version Manager",
+                                     "execute":  "Run Command",
+                                     "select_input":  "Select Input Files",
+                                     "select_output":  "Select Output Folder",
+                                     "save_favorite":  "Save Favorite",
+                                     "open_output_folder":  "Open Output Folder",
+                                     "cancel":  "Cancel",
+                                     "save":  "Save",
+                                     "saving":  "Saving..."
+                                 },
+                     "labels":  {
+                                    "input":  "Input",
+                                    "output":  "Output Folder",
+                                    "not_selected":  "Not selected",
+                                    "realtime_logs":  "Realtime Logs",
+                                    "output_file":  "Output File"
+                                },
+                     "viewer":  {
+                                    "empty":  "No logs yet",
+                                    "back_to_bottom":  "Back to bottom"
+                                },
+                     "favorites":  {
+                                       "title":  "Recent Favorites",
+                                       "desc":  "Click a card to load command and start quickly",
+                                       "empty":  "No favorite commands yet",
+                                       "updated_at":  "Updated",
+                                       "unnamed_command":  "Untitled Command"
+                                   },
+                     "dialog":  {
+                                    "title":  "Save Favorite Command",
+                                    "desc":  "Fill title and optional description to save current command.",
+                                    "title_label":  "Command Title",
+                                    "title_placeholder":  "For example: HEVC transcode",
+                                    "desc_label":  "Description (Optional)",
+                                    "desc_placeholder":  "Describe what this command does"
+                                },
+                     "toast":  {
+                                   "init_failed":  "FFmpeg initialization failed",
+                                   "get_favorites_failed":  "Failed to load favorite commands",
+                                   "ffmpeg_preparing":  "FFmpeg is preparing, please wait",
+                                   "ffmpeg_not_ready":  "FFmpeg is not ready yet",
+                                   "command_empty":  "Command cannot be empty",
+                                   "open_output_failed":  "Failed to open folder",
+                                   "favorite_title_required":  "Please enter command title",
+                                   "favorite_saved":  "Favorite saved",
+                                   "favorite_save_failed":  "Failed to save favorite",
+                                   "favorite_loaded":  "Loaded favorite command: {{title}}"
+                               }
+                 }
+}

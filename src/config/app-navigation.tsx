@@ -1,20 +1,17 @@
-import React, { Suspense, lazy } from "react";
+﻿import React, { Suspense, lazy } from "react";
 import { createHashRouter, Outlet } from "react-router-dom";
 import { ListOrdered } from "lucide-react";
 import i18n from "@/lib/i18n";
 import ErrorPage from "@/components/error/ErrorPage";
 import HomeLinear from "@/components/icons/HomeLinear";
 import FolderLinear from "@/components/icons/FolderLinear";
-import AILinear from "@/components/icons/AILinear";
 
 const RootLayout = lazy(() => import("@/layout/RootPage"));
 const AuthLayout = lazy(() => import("@/layout/AuthLayout"));
 const HomePage = lazy(() => import("@/pages/home"));
 const TaskHistoryPage = lazy(() => import("@/pages/tasks"));
-const MyFilesPage = lazy(() => import("@/pages/myfiles"));
+const FavoriteCommandsPage = lazy(() => import("@/pages/favorite-commands"));
 const FFmpegVersionManagerPage = lazy(() => import("@/pages/ffmpeg"));
-const SignInPage = lazy(() => import("@/pages/auth/sign-in"));
-const SignUpPage = lazy(() => import("@/pages/auth/sign-up"));
 const ForceUpdatePage = lazy(() => import("@/pages/force-update"));
 
 const preloadI18nNamespaces = (namespaces: string[]) => async () => {
@@ -34,7 +31,7 @@ const withSuspense = (element: React.ReactNode) => (
 
 export const MENU_ITEMS = {
   home: "/",
-  myFiles: "/my/files",
+  favoriteCommands: "/favorite/commands",
   tasks: "/tasks",
   ffmpegVersionManager: "/ffmpeg/version-manager",
 } as const;
@@ -63,8 +60,8 @@ export const SIDEBAR_NAV_ITEMS_CONFIG: SidebarNavConfigItem[] = [
     href: MENU_ITEMS.tasks,
     badgeKey: "unreadFinishedCount",
   },
-  { labelKey: "nav.my_files", icon: FolderLinear, href: MENU_ITEMS.myFiles },
-  { labelKey: "nav.ai_tools", icon: AILinear, disabled: true },
+  { labelKey: "nav.favorite_commands", icon: FolderLinear, href: MENU_ITEMS.favoriteCommands },
+  // { labelKey: "nav.ai_tools", icon: AILinear, disabled: true },
 ];
 
 export const QUICK_ACCESS_CONFIG: QuickAccessItem[] = [
@@ -87,8 +84,8 @@ export const appRouter = createHashRouter([
             loader: preloadI18nNamespaces(["home"]),
           },
           {
-            path: "my",
-            children: [{ path: "files", element: withSuspense(<MyFilesPage />) }],
+            path: "favorite",
+            children: [{ path: "commands", element: withSuspense(<FavoriteCommandsPage />) }],
           },
           {
             path: "tasks",
@@ -108,20 +105,6 @@ export const appRouter = createHashRouter([
         ],
       },
     ],
-  },
-  {
-    path: "/sign-in",
-    element: withSuspense(<SignInPage />),
-    errorElement: <ErrorPage />,
-    hydrateFallbackElement,
-    loader: preloadI18nNamespaces(["auth", "common"]),
-  },
-  {
-    path: "/sign-up",
-    element: withSuspense(<SignUpPage />),
-    errorElement: <ErrorPage />,
-    hydrateFallbackElement,
-    loader: preloadI18nNamespaces(["auth", "common"]),
   },
   {
     path: "/force-update",

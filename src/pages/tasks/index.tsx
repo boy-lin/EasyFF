@@ -7,12 +7,8 @@ import {
   type SortingState,
   useReactTable,
 } from "@tanstack/react-table";
-import { AlertCircle, ArrowUpDown, FolderOpen, RefreshCw, Search } from "lucide-react";
+import { AlertCircle, ArrowUpDown, FolderOpen, Search } from "lucide-react";
 import { bridge, type TaskHistoryItem } from "@/lib/bridge";
-import { useSession } from "@/lib/auth-client";
-import {
-  syncLocalTaskHistoryToRemote,
-} from "@/services/task-history-api";
 import { formatDuration, getDurationSecondsFromTimestamps, formatDateTime } from "@/lib/time";
 import { EllipsisName } from "@/components/ui-lab/ellipsis-name";
 import { Button } from "@/components/ui/button";
@@ -38,8 +34,8 @@ const PAGE_SIZE = 10;
 
 export default function TaskHistoryPage() {
   const { t } = useTranslation("tasks");
-  const { data: session } = useSession();
   const [globalFilter, setGlobalFilter] = useState("");
+  const [debouncedFilter, setDebouncedFilter] = useState("");
   const [tasks, setTasks] = useState<TaskHistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -50,7 +46,7 @@ export default function TaskHistoryPage() {
   const [hasNextPage, setHasNextPage] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
-  const fetchData = async (targetPage: number = page) => {
+  const fetchData = async (targetPage: number = page, keyword: string = debouncedFilter) => {
     setLoading(true);
     try {
       const primarySort = sorting[0];
@@ -59,14 +55,6 @@ export default function TaskHistoryPage() {
           ? (primarySort.id as "output_name" | "created_at")
           : "created_at";
       const sortOrder: "asc" | "desc" = primarySort?.desc ? "desc" : "asc";
-      const keyword = globalFilter.trim();
-      try {
-        await syncLocalTaskHistoryToRemote({
-          userId: session?.user?.id || undefined,
-        });
-      } catch (error) {
-        console.warn("Failed to sync local task history to remote:", error);
-      }
       const history = await bridge.getTaskHistory(
         PAGE_SIZE + 1,
         targetPage * PAGE_SIZE,
@@ -88,8 +76,16 @@ export default function TaskHistoryPage() {
   };
 
   useEffect(() => {
-    fetchData(page);
-  }, [page, session?.user?.id, sorting]);
+    const timer = setTimeout(() => {
+      setDebouncedFilter(globalFilter.trim());
+      setPage(0);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [globalFilter]);
+
+  useEffect(() => {
+    fetchData(page, debouncedFilter);
+  }, [page, sorting, debouncedFilter]);
 
   useEffect(() => {
     useAppStore.getState().resetUnreadFinishedCount();
@@ -103,28 +99,6 @@ export default function TaskHistoryPage() {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [tasks]);
-
-  const handleSearch = () => {
-    setPage(0);
-    fetchData(0);
-  };
-
-  const handleRefresh = () => {
-    fetchData(page);
-  };
-
-  // const handleDelete = async (id: string) => {
-  //   try {
-  //     if (session?.user) {
-  //       await deleteRemoteTaskHistory(id);
-  //     } else {
-  //       await bridge.deleteTaskHistory(id);
-  //     }
-  //     setTasks((prev) => prev.filter((item) => item.id !== id));
-  //   } catch (error) {
-  //     console.error("Failed to delete task history:", error);
-  //   }
-  // };
 
   const handleOpenFolder = async (task: TaskHistoryItem) => {
     if (task.status !== "finished") {
@@ -280,8 +254,8 @@ export default function TaskHistoryPage() {
   });
 
   return (
-    <Card className="h-full w-full p-0 gap-0 bg-transparent border-none shadow-none flex flex-col">
-      <CardHeader className="rounded-none px-4 flex-shrink-0">
+    <Card className="h-full w-full p-0 gap-2 bg-transparent border-none shadow-none flex flex-col">
+      <CardHeader className="rounded-none px-4">
         <div className="flex items-center justify-between gap-3">
           <CardTitle>{t("title")}</CardTitle>
           <CardDescription>
@@ -296,19 +270,12 @@ export default function TaskHistoryPage() {
                 onChange={(e) => setGlobalFilter(e.target.value)}
               />
             </div>
-            <Button variant="outline" onClick={handleSearch} disabled={loading}>{t("search.action")}</Button>
-
-            <Button variant="outline" onClick={handleRefresh} disabled={loading || isPending}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${loading || isPending ? "animate-spin" : ""}`} />
-              {t("refresh")}
-            </Button>
           </div>
         </div>
       </CardHeader>
-      <CardContent className="relative flex-1 min-h-0 overflow-auto">
-
-        <Table>
-          <TableHeader>
+      <CardContent className="px-4 relative flex-1 min-h-0 overflow-auto">
+        <Table wrapperClassName="rounded-lg border">
+          <TableHeader className="bg-muted/50">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (

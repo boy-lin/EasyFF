@@ -42,8 +42,8 @@ type JwtPayload = {
 
 const authorizeEndpoint = `${baseApiUrl}/api/auth/authorize`;
 const tokenEndpoint = `${baseApiUrl}/api/auth/token`;
-const clientId = import.meta.env.VITE_DESKTOP_AUTH_CLIENT_ID || "easyFF-desktop";
-const redirectUri = import.meta.env.VITE_DESKTOP_AUTH_REDIRECT_URI || "easyFF://auth/callback";
+const clientId = import.meta.env.VITE_DESKTOP_AUTH_CLIENT_ID;
+const redirectUri = import.meta.env.VITE_DESKTOP_AUTH_REDIRECT_URI;
 
 function randomString(bytes = 32): string {
   const arr = new Uint8Array(bytes);

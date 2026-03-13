@@ -1,10 +1,10 @@
 ﻿use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use tauri::command;
 use tauri::ipc::JavaScriptChannelId;
 use tauri::{AppHandle, Emitter, State};
@@ -361,9 +361,96 @@ pub async fn media_task_cancel_task(id: String) -> Result<(), String> {
 #[command]
 pub async fn run_self_check() -> Result<SelfCheckResult, String> { Err("command disabled".to_string()) }
 #[command]
-pub async fn get_device_id() -> Result<String, String> { Err("command disabled".to_string()) }
+pub async fn get_device_id() -> Result<String, String> {
+    machine_uid::get().map_err(|e| format!("failed to get device id: {}", e))
+}
 #[command]
-pub async fn auth_exchange_code(_input: AuthExchangeCodeInput) -> Result<AuthTokenResponse, String> { Err("command disabled".to_string()) }
+pub async fn auth_exchange_code(input: AuthExchangeCodeInput) -> Result<AuthTokenResponse, String> {
+    let token_endpoint = input.token_endpoint.trim().to_string();
+    let client_id = input.client_id.trim().to_string();
+    let code = input.code.trim().to_string();
+    let code_verifier = input.code_verifier.trim().to_string();
+    let redirect_uri = input.redirect_uri.trim().to_string();
+
+    if token_endpoint.is_empty() {
+        return Err("token_endpoint is required".to_string());
+    }
+    if client_id.is_empty() {
+        return Err("client_id is required".to_string());
+    }
+    if code.is_empty() {
+        return Err("code is required".to_string());
+    }
+    if code_verifier.is_empty() {
+        return Err("code_verifier is required".to_string());
+    }
+    if redirect_uri.is_empty() {
+        return Err("redirect_uri is required".to_string());
+    }
+
+    let client = reqwest::Client::builder()
+        .build()
+        .map_err(|e| format!("failed to create http client: {}", e))?;
+
+    let response = client
+        .post(token_endpoint.as_str())
+        .json(&serde_json::json!({
+            "grant_type": "authorization_code",
+            "client_id": client_id,
+            "code": code,
+            "code_verifier": code_verifier,
+            "redirect_uri": redirect_uri,
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("token exchange request failed: {}", e))?;
+
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
+            let err = v
+                .get("error_description")
+                .and_then(|x| x.as_str())
+                .or_else(|| v.get("error").and_then(|x| x.as_str()))
+                .unwrap_or("token endpoint returned non-success status");
+            return Err(format!("token exchange failed: {} ({})", err, status));
+        }
+        return Err(format!(
+            "token exchange failed: http {} {}",
+            status,
+            body
+        ));
+    }
+
+    let value = serde_json::from_str::<serde_json::Value>(&body)
+        .map_err(|e| format!("failed to parse token response json: {}; body={}", e, body))?;
+
+    log::info!("auth_exchange_code token response shape: {}", value);
+
+    if let Ok(token) = serde_json::from_value::<AuthTokenResponse>(value.clone()) {
+        if !token.access_token.trim().is_empty() {
+            return Ok(token);
+        }
+    }
+
+    if let Some(data) = value.get("data") {
+        let token = serde_json::from_value::<AuthTokenResponse>(data.clone()).map_err(|e| {
+            format!(
+                "failed to parse token response.data: {}; response={}",
+                e, value
+            )
+        })?;
+        if !token.access_token.trim().is_empty() {
+            return Ok(token);
+        }
+    }
+
+    Err(format!(
+        "failed to parse token response: missing access_token; response={}",
+        value
+    ))
+}
 #[command]
 pub async fn updater_guard_report_success() -> Result<UpdaterGuardStatus, String> { Err("command disabled".to_string()) }
 #[command]
@@ -492,7 +579,6 @@ pub async fn clear_task_history(task_type: Option<String>) -> Result<(), String>
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct FfmpegVersionQuery {
-    pub source: Option<String>,
     pub os: Option<String>,
     pub arch: Option<String>,
     pub keyword: Option<String>,
@@ -506,6 +592,32 @@ pub struct FavoriteCommandInput {
     pub title: String,
     pub description: Option<String>,
     pub command: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct FavoriteSyncQuery {
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+    pub include_deleted: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct FavoriteSyncCursorInput {
+    pub cursor: i64,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct FavoriteSyncAckInput {
+    pub acks: Vec<crate::storage::favorite_commands::FavoriteCommandSyncAck>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct FavoriteSyncApplyRemoteInput {
+    pub items: Vec<crate::storage::favorite_commands::FavoriteCommandItem>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -527,6 +639,9 @@ pub struct FfmpegDownloadProgressEvent {
     pub percent: f64,
     pub status: String,
 }
+
+static CANCELED_FFMPEG_DOWNLOADS: LazyLock<Mutex<HashSet<String>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
 
 fn sanitize_file_name(name: &str) -> String {
     let mut out = String::with_capacity(name.len());
@@ -564,6 +679,139 @@ fn infer_download_name(item: &crate::storage::ffmpeg_versions::FfmpegVersionItem
     )
 }
 
+fn sanitize_dir_name(input: &str) -> String {
+    let mut out = String::new();
+    for ch in input.chars() {
+        if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
+            out.push(ch);
+        } else {
+            out.push('_');
+        }
+    }
+    if out.is_empty() {
+        "ffmpeg".to_string()
+    } else {
+        out
+    }
+}
+
+fn extract_zip(archive_path: &Path, target_dir: &Path) -> Result<(), String> {
+    let file = File::open(archive_path).map_err(|e| e.to_string())?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        let Some(enclosed) = entry.enclosed_name().map(|v| v.to_path_buf()) else {
+            continue;
+        };
+        let outpath = target_dir.join(enclosed);
+        if entry.is_dir() {
+            fs::create_dir_all(&outpath).map_err(|e| e.to_string())?;
+            continue;
+        }
+        if let Some(parent) = outpath.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let mut outfile = File::create(&outpath).map_err(|e| e.to_string())?;
+        std::io::copy(&mut entry, &mut outfile).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn extract_tar_xz(archive_path: &Path, target_dir: &Path) -> Result<(), String> {
+    let file = File::open(archive_path).map_err(|e| e.to_string())?;
+    let decoder = xz2::read::XzDecoder::new(file);
+    let mut archive = tar::Archive::new(decoder);
+    archive.unpack(target_dir).map_err(|e| e.to_string())
+}
+
+fn extract_7z_with_system(archive_path: &Path, target_dir: &Path) -> Result<(), String> {
+    let output_arg = format!("-o{}", target_dir.to_string_lossy());
+    for bin in ["7z", "7za"] {
+        let output = Command::new(bin)
+            .args([
+                "x",
+                "-y",
+                output_arg.as_str(),
+                archive_path.to_string_lossy().as_ref(),
+            ])
+            .output();
+        let Ok(out) = output else { continue };
+        if out.status.success() {
+            return Ok(());
+        }
+    }
+    Err("7z extraction failed. please install 7-Zip or choose a zip/tar.xz source".to_string())
+}
+
+fn find_ffmpeg_binary(root: &Path) -> Option<PathBuf> {
+    let target = if cfg!(target_os = "windows") {
+        "ffmpeg.exe"
+    } else {
+        "ffmpeg"
+    };
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            let Some(name) = path.file_name().and_then(|v| v.to_str()) else {
+                continue;
+            };
+            if name.eq_ignore_ascii_case(target) {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
+fn resolve_ffmpeg_binary_from_download(
+    archive_path: &Path,
+    base_dir: &Path,
+    row_key: &str,
+) -> Result<PathBuf, String> {
+    let file_name = archive_path
+        .file_name()
+        .and_then(|v| v.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    if cfg!(target_os = "windows")
+        && archive_path
+            .extension()
+            .and_then(|v| v.to_str())
+            .map(|v| v.eq_ignore_ascii_case("exe"))
+            .unwrap_or(false)
+    {
+        return Ok(archive_path.to_path_buf());
+    }
+
+    let mut extract_dir = base_dir.join("extracted");
+    extract_dir.push(sanitize_dir_name(row_key));
+    if extract_dir.exists() {
+        fs::remove_dir_all(&extract_dir).map_err(|e| e.to_string())?;
+    }
+    fs::create_dir_all(&extract_dir).map_err(|e| e.to_string())?;
+
+    if file_name.ends_with(".zip") {
+        extract_zip(archive_path, &extract_dir)?;
+    } else if file_name.ends_with(".tar.xz") || file_name.ends_with(".txz") {
+        extract_tar_xz(archive_path, &extract_dir)?;
+    } else if file_name.ends_with(".7z") {
+        extract_7z_with_system(archive_path, &extract_dir)?;
+    } else {
+        return Err(format!("unsupported archive format: {}", file_name));
+    }
+
+    find_ffmpeg_binary(&extract_dir).ok_or_else(|| "ffmpeg executable not found after extraction".to_string())
+}
+
 #[command]
 pub async fn refresh_ffmpeg_versions(
     source: Option<String>,
@@ -596,7 +844,6 @@ pub async fn list_ffmpeg_versions(
     }
 
     let q = query.unwrap_or(FfmpegVersionQuery {
-        source: None,
         os: None,
         arch: None,
         keyword: None,
@@ -607,7 +854,7 @@ pub async fn list_ffmpeg_versions(
     let arch = q.arch.or_else(|| Some(detect_host_arch()));
 
     crate::storage::ffmpeg_versions::list(
-        q.source,
+        None,
         q.os,
         arch,
         q.keyword,
@@ -640,11 +887,14 @@ pub async fn download_ffmpeg_version(app: AppHandle, row_key: String) -> Result<
     crate::storage::ffmpeg_versions::set_download_state(row_key.as_str(), "downloading")
         .await
         .map_err(|e| e.to_string())?;
+    if let Ok(mut canceled) = CANCELED_FFMPEG_DOWNLOADS.lock() {
+        canceled.remove(row_key.as_str());
+    }
 
     let app_handle = app.clone();
     let row_key_cloned = row_key.clone();
     let item_cloned = item.clone();
-    let path = tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
+    let download_result = tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
         let mut target_dir: PathBuf =
             dirs::data_local_dir().unwrap_or_else(|| std::env::temp_dir());
         target_dir.push("easyff");
@@ -677,6 +927,14 @@ pub async fn download_ffmpeg_version(app: AppHandle, row_key: String) -> Result<
         );
 
         loop {
+            let is_canceled = CANCELED_FFMPEG_DOWNLOADS
+                .lock()
+                .map(|set| set.contains(row_key_cloned.as_str()))
+                .unwrap_or(false);
+            if is_canceled {
+                let _ = fs::remove_file(&target_path);
+                return Err("download canceled".to_string());
+            }
             let n = response.read(&mut buf).map_err(|e| e.to_string())?;
             if n == 0 {
                 break;
@@ -708,16 +966,51 @@ pub async fn download_ffmpeg_version(app: AppHandle, row_key: String) -> Result<
                 status: "completed".to_string(),
             },
         );
-        Ok(target_path.to_string_lossy().to_string())
+        let executable = resolve_ffmpeg_binary_from_download(
+            target_path.as_path(),
+            target_dir.as_path(),
+            row_key_cloned.as_str(),
+        )?;
+        Ok(executable.to_string_lossy().to_string())
     })
     .await
-    .map_err(|e| format!("[JOIN:download_ffmpeg_version] {}", e))??;
+    .map_err(|e| format!("[JOIN:download_ffmpeg_version] {}", e))?;
+
+    let path = match download_result {
+        Ok(path) => path,
+        Err(err) => {
+            let state = if err.to_ascii_lowercase().contains("cancel") {
+                "not_downloaded"
+            } else {
+                "failed"
+            };
+            let _ = crate::storage::ffmpeg_versions::set_download_state(row_key.as_str(), state).await;
+            return Err(err);
+        }
+    };
 
     crate::storage::ffmpeg_versions::mark_downloaded(row_key.as_str(), path.as_str())
         .await
         .map_err(|e| e.to_string())?;
+    if let Ok(mut canceled) = CANCELED_FFMPEG_DOWNLOADS.lock() {
+        canceled.remove(row_key.as_str());
+    }
 
     Ok(path)
+}
+
+#[command]
+pub async fn cancel_ffmpeg_download(row_key: String) -> Result<(), String> {
+    let key = row_key.trim();
+    if key.is_empty() {
+        return Err("row_key is required".to_string());
+    }
+    if let Ok(mut canceled) = CANCELED_FFMPEG_DOWNLOADS.lock() {
+        canceled.insert(key.to_string());
+    }
+    crate::storage::ffmpeg_versions::set_download_state(key, "not_downloaded")
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[command]
@@ -729,7 +1022,33 @@ pub async fn update_ffmpeg_download_state(row_key: String, state: String) -> Res
 
 #[command]
 pub async fn activate_ffmpeg_version(row_key: String) -> Result<(), String> {
-    crate::storage::ffmpeg_versions::activate(row_key.as_str())
+    let key = row_key.trim().to_string();
+    if key.is_empty() {
+        return Err("row_key is required".to_string());
+    }
+
+    let item = crate::storage::ffmpeg_versions::get_by_row_key(key.as_str())
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "ffmpeg version not found".to_string())?;
+
+    let local_path = item
+        .local_path
+        .as_ref()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| "ffmpeg binary path is empty, please download again".to_string())?;
+
+    let binary_path = PathBuf::from(local_path.clone());
+    if !binary_path.exists() || !binary_path.is_file() {
+        let _ = crate::storage::ffmpeg_versions::set_download_state(key.as_str(), "failed").await;
+        return Err(format!(
+            "ffmpeg binary not found: {}. please re-download this version",
+            local_path
+        ));
+    }
+
+    crate::storage::ffmpeg_versions::activate(key.as_str())
         .await
         .map_err(|e| e.to_string())
 }
@@ -747,6 +1066,11 @@ pub async fn get_current_ffmpeg_version() -> Result<serde_json::Value, String> {
         .await
         .map_err(|e| e.to_string())?;
     let active = installed.iter().find(|v| v.is_active).cloned();
+    let table_version = active
+        .as_ref()
+        .map(|v| v.version.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| "unknown".to_string());
 
     let active_path = active
         .as_ref()
@@ -802,7 +1126,7 @@ pub async fn get_current_ffmpeg_version() -> Result<serde_json::Value, String> {
 
     if let Some((version, executable_path)) = probe {
         return Ok(serde_json::json!({
-            "version": version,
+            "version": table_version,
             "displayVersion": version,
             "executablePath": executable_path,
         }));
@@ -810,7 +1134,7 @@ pub async fn get_current_ffmpeg_version() -> Result<serde_json::Value, String> {
 
     let fallback_version = active_display.unwrap_or_else(|| "unknown".to_string());
     Ok(serde_json::json!({
-        "version": fallback_version,
+        "version": table_version,
         "displayVersion": fallback_version,
         "executablePath": active.and_then(|v| v.local_path),
     }))
@@ -858,3 +1182,59 @@ pub async fn delete_favorite_command(id: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+#[command]
+pub async fn list_favorite_commands_for_sync(
+    query: Option<FavoriteSyncQuery>,
+) -> Result<Vec<crate::storage::favorite_commands::FavoriteCommandItem>, String> {
+    let q = query.unwrap_or(FavoriteSyncQuery {
+        limit: Some(200),
+        offset: Some(0),
+        include_deleted: Some(false),
+    });
+    crate::storage::favorite_commands::list_for_sync(
+        q.limit.unwrap_or(200).clamp(1, 1000) as usize,
+        q.offset.unwrap_or(0) as usize,
+        q.include_deleted.unwrap_or(false),
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[command]
+pub async fn list_pending_favorite_command_sync(
+    limit: Option<u32>,
+) -> Result<Vec<crate::storage::favorite_commands::FavoriteCommandItem>, String> {
+    crate::storage::favorite_commands::list_pending_sync(limit.unwrap_or(200).clamp(1, 1000) as usize)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[command]
+pub async fn apply_remote_favorite_command_changes(
+    input: FavoriteSyncApplyRemoteInput,
+) -> Result<usize, String> {
+    crate::storage::favorite_commands::upsert_from_remote_batch(input.items)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[command]
+pub async fn mark_favorite_commands_synced(input: FavoriteSyncAckInput) -> Result<usize, String> {
+    crate::storage::favorite_commands::mark_synced(input.acks)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[command]
+pub async fn get_favorite_command_sync_cursor() -> Result<i64, String> {
+    crate::storage::favorite_commands::get_sync_cursor()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[command]
+pub async fn set_favorite_command_sync_cursor(input: FavoriteSyncCursorInput) -> Result<(), String> {
+    crate::storage::favorite_commands::set_sync_cursor(input.cursor)
+        .await
+        .map_err(|e| e.to_string())
+}

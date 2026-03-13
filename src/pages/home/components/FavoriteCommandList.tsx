@@ -1,3 +1,4 @@
+﻿import { useTranslation } from "react-i18next";
 import { type FavoriteCommandItem } from "@/lib/bridge";
 import { FavoriteCommandCard } from "@/pages/home/components/FavoriteCommandCard";
 
@@ -12,8 +13,10 @@ export function FavoriteCommandList({
   onSelect,
   formatUpdatedAt,
 }: FavoriteCommandListProps) {
+  const { t } = useTranslation("ffmpeg");
+
   if (items.length === 0) {
-    return <p className="text-sm text-muted-foreground">暂无收藏命令</p>;
+    return <p className="text-sm text-muted-foreground">{t("homePage.favorites.empty")}</p>;
   }
 
   return (
@@ -29,4 +32,3 @@ export function FavoriteCommandList({
     </div>
   );
 }
-

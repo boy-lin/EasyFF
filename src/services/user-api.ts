@@ -17,7 +17,6 @@ export async function getUserInfoApi(): Promise<User> {
   const { signal, cancel } = buildTimeoutSignal();
   let response: Response;
   try {
-    console.warn('getUserInfoApi' + baseApiUrl);
     const accessToken = getDesktopAccessToken();
     response = await fetch(`${baseApiUrl}/api/user/get-user-info`, {
       method: "POST",

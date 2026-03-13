@@ -176,7 +176,7 @@ const SidebarNavItem = ({
       : location.pathname.startsWith(item.href)
     : false;
   const isDisabled = item.disabled;
-
+  const { open } = useSidebar();
   return (
     <motion.button
       variants={itemVariants}
@@ -209,7 +209,8 @@ const SidebarNavItem = ({
       />
       <div
         className={cn(
-          "flex flex-shrink-0 h-8 w-8 items-center justify-center rounded-xl transition-all",
+          "flex flex-shrink-0 items-center justify-center rounded-xl transition-all",
+          open ? "h-8 w-8" : "h-7 w-7",
           isActive
             ? "bg-accent text-accent-foreground"
             : "bg-muted group-hover:scale-105 group-hover:bg-accent/60"
@@ -290,7 +291,8 @@ const SidebarQuickAccessItem = ({
           }}
           title={isPinned ? t("sidebar.unpin") : t("sidebar.pin")}
           className={cn(
-            "cursor-pointer ml-auto h-8 w-8 flex items-center justify-center rounded-md transition",
+            "cursor-pointer ml-auto flex items-center justify-center rounded-md transition",
+            "h-8 w-8",
             isPinned
               ? "text-indigo-600 hover:bg-white/10"
               : "text-foreground/60 hover:text-foreground hover:bg-white/10 opacity-0 group-hover:opacity-100"

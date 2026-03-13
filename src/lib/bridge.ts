@@ -75,6 +75,13 @@ export type BridgeEvents = {
     cwd?: string;
   };
   media_task_event: MediaTaskEvent;
+  media_task_log: {
+    task_id: string;
+    task_type: string;
+    stream: "stdout" | "stderr" | string;
+    line: string;
+    ts: number;
+  };
   media_thumbnail: {
     requestId: string;
     result: ThumbnailPayload | null;
@@ -186,12 +193,24 @@ export interface FavoriteCommandItem {
   command: string;
   createdAt: number;
   updatedAt: number;
+  deletedAt?: number | null;
+  syncState?: "synced" | "pending_upsert" | "pending_delete" | "conflict";
+  serverVersion?: number | null;
+  updatedByDeviceId?: string | null;
 }
 
 export interface CreateFavoriteCommandInput {
   title: string;
   description?: string;
   command: string;
+}
+
+export interface FavoriteSyncAck {
+  id: string;
+  serverVersion?: number | null;
+  updatedAt?: number | null;
+  deletedAt?: number | null;
+  updatedByDeviceId?: string | null;
 }
 
 export interface BridgeInvokeError extends Error {
@@ -209,12 +228,6 @@ export type ThumbnailPayload = {
   height: number;
   sourceWidth?: number;
   sourceHeight?: number;
-};
-
-export type ThumbnailOptions = {
-  width?: number;
-  height?: number;
-  fitMode?: "contain" | "cover";
 };
 
 export interface VideoPlayerOpenInput {
@@ -870,58 +883,6 @@ class Bridge {
     return this.invoke<number>("audio_player_get_duration");
   }
 
-  async generateMediaThumbnail(
-    path: string,
-    options?: ThumbnailOptions,
-    requestOptions?: { timeoutMs?: number; signal?: AbortSignal },
-  ): Promise<ThumbnailPayload | null> {
-    const requestId =
-      globalThis.crypto?.randomUUID?.() ??
-      `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-    const { promise, cancel } = this.createEventWaiter("media_thumbnail", {
-      filter: (payload) => payload.requestId === requestId,
-      timeoutMs: requestOptions?.timeoutMs,
-      signal: requestOptions?.signal,
-    });
-
-    try {
-      await this.invoke<void>("generate_media_thumbnail", {
-        requestId,
-        path,
-        options,
-      });
-    } catch (err) {
-      cancel();
-      throw err;
-    }
-
-    const payload = await promise;
-    if (payload.error) {
-      throw new Error(payload.error);
-    }
-    return payload.result ?? null;
-  }
-
-  async getMediaThumbnailSrc(
-    path: string,
-    options?: ThumbnailOptions,
-    requestOptions?: { timeoutMs?: number; signal?: AbortSignal },
-  ): Promise<string | null> {
-    const result = await this.generateMediaThumbnail(
-      path,
-      options,
-      requestOptions,
-    );
-    if (result?.thumbnailPath) {
-      return convertFileSrc(result.thumbnailPath);
-    }
-    if (result?.dataUrl) {
-      return result.dataUrl;
-    }
-    return null;
-  }
-
   async getDeviceId(): Promise<string> {
     return this.invoke<string>("get_device_id");
   }
@@ -953,7 +914,6 @@ class Bridge {
   }
 
   async listFfmpegVersions(query?: {
-    source?: string;
     os?: string;
     arch?: string;
     keyword?: string;
@@ -1044,6 +1004,10 @@ class Bridge {
     }
   }
 
+  async cancelFfmpegDownload(rowKey: string): Promise<void> {
+    await this.invoke("cancel_ffmpeg_download", { rowKey });
+  }
+
   async listFavoriteCommands(
     limit: number = 100,
     offset: number = 0,
@@ -1062,6 +1026,44 @@ class Bridge {
 
   async deleteFavoriteCommand(id: string): Promise<void> {
     await this.invoke("delete_favorite_command", { id });
+  }
+
+  async listFavoriteCommandsForSync(query?: {
+    limit?: number;
+    offset?: number;
+    includeDeleted?: boolean;
+  }): Promise<FavoriteCommandItem[]> {
+    return this.invoke<FavoriteCommandItem[]>("list_favorite_commands_for_sync", {
+      query,
+    });
+  }
+
+  async listPendingFavoriteCommandSync(limit: number = 200): Promise<FavoriteCommandItem[]> {
+    return this.invoke<FavoriteCommandItem[]>("list_pending_favorite_command_sync", {
+      limit,
+    });
+  }
+
+  async applyRemoteFavoriteCommandChanges(items: FavoriteCommandItem[]): Promise<number> {
+    return this.invoke<number>("apply_remote_favorite_command_changes", {
+      input: { items },
+    });
+  }
+
+  async markFavoriteCommandsSynced(acks: FavoriteSyncAck[]): Promise<number> {
+    return this.invoke<number>("mark_favorite_commands_synced", {
+      input: { acks },
+    });
+  }
+
+  async getFavoriteCommandSyncCursor(): Promise<number> {
+    return this.invoke<number>("get_favorite_command_sync_cursor");
+  }
+
+  async setFavoriteCommandSyncCursor(cursor: number): Promise<void> {
+    await this.invoke("set_favorite_command_sync_cursor", {
+      input: { cursor },
+    });
   }
 
   async getMyFiles(

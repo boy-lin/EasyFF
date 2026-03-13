@@ -1,0 +1,162 @@
+﻿{
+    "common":  {
+                   "na":  "-"
+               },
+    "labels":  {
+                   "os":  {
+                              "windows":  "Windows",
+                              "linux":  "Linux",
+                              "macos":  "macOS"
+                          },
+                   "arch":  {
+                                "apple_silicon":  "Apple Silicon",
+                                "intel":  "Intel",
+                                "x64":  "x64",
+                                "arm64":  "ARM64"
+                            }
+               },
+    "status":  {
+                   "common":  {
+                                  "downloading":  "下载中",
+                                  "failed":  "失败"
+                              },
+                   "installed":  {
+                                     "active":  "已激活",
+                                     "installed":  "已安装"
+                                 },
+                   "remote":  {
+                                  "downloaded":  "已下载",
+                                  "not_downloaded":  "未下载"
+                              }
+               },
+    "toast":  {
+                  "load_list_failed":  "加载 FFmpeg 列表失败",
+                  "download_failed":  "FFmpeg 下载失败",
+                  "cancel_download_failed":  "取消下载失败",
+                  "activated":  "FFmpeg 已切换到选中版本",
+                  "activate_failed":  "激活失败",
+                  "deleted":  "已删除版本",
+                  "delete_failed":  "删除失败"
+              },
+    "table":  {
+                  "source":  "来源",
+                  "version":  "版本",
+                  "release_date":  "发布日期",
+                  "arch":  "架构",
+                  "status":  "状态",
+                  "actions":  "操作"
+              },
+    "page":  {
+                 "title":  "FFmpeg 版本管理",
+                 "description":  "下载远程静态包，管理当前使用版本。"
+             },
+    "installed":  {
+                      "title":  "已安装版本",
+                      "description":  "在这里管理激活与删除，刷新数据时状态不会丢失。",
+                      "empty":  "暂无已安装 FFmpeg 版本。"
+                  },
+    "remote":  {
+                   "title":  "远程可用版本",
+                   "description":  "当下载失败时候，建议尝试下载其他来源。"
+               },
+    "actions":  {
+                    "canceling":  "取消中...",
+                    "cancel_download":  "取消下载",
+                    "downloaded":  "已下载",
+                    "download":  "下载",
+                    "in_use":  "使用中",
+                    "activate":  "激活",
+                    "delete":  "删除"
+                },
+    "confirm":  {
+                    "overwrite_download":  {
+                                               "title":  "确认覆盖下载",
+                                               "description":  "版本 {{version}} 已下载，是否重新下载并覆盖本地文件？",
+                                               "cancel":  "取消",
+                                               "confirm":  "覆盖下载"
+                                           }
+                },
+    "runtime":  {
+                    "badge":  {
+                                  "checking":  "检查中...",
+                                  "activating":  "激活中...",
+                                  "downloading":  "下载中",
+                                  "error":  "FFmpeg 初始化失败",
+                                  "ready":  "FFmpeg 已就绪",
+                                  "idle":  "读取中..."
+                              },
+                    "detail":  {
+                                   "checking":  "正在检查 FFmpeg 环境...",
+                                   "activating":  "正在激活 FFmpeg...",
+                                   "downloading":  "正在下载 FFmpeg",
+                                   "error":  "FFmpeg 初始化失败",
+                                   "ready":  "FFmpeg 已就绪",
+                                   "idle":  "等待初始化..."
+                               },
+                    "actions":  {
+                                    "canceling":  "取消中...",
+                                    "cancel_download":  "中断下载"
+                                },
+                    "toast":  {
+                                  "cancel_download_failed":  "中断下载失败"
+                              }
+                },
+    "source":  {
+                   "loading":  "加载中...",
+                   "query_failed":  "查询失败。",
+                   "loaded_count":  "已从加载 {{count}} 条记录。"
+               },
+    "homePage":  {
+                     "defaultCommand":  "ffmpeg -i input.mp4 -vf scale=1280:720 -c:v libx264 output.mp4",
+                     "media_filter_name":  "媒体",
+                     "actions":  {
+                                     "version_manager":  "版本管理",
+                                     "execute":  "执行命令",
+                                     "select_input":  "选择输入文件",
+                                     "select_output":  "选择输出目录",
+                                     "save_favorite":  "收藏命令",
+                                     "open_output_folder":  "打开输出目录",
+                                     "cancel":  "取消",
+                                     "save":  "保存收藏",
+                                     "saving":  "保存中..."
+                                 },
+                     "labels":  {
+                                    "input":  "输入",
+                                    "output":  "输出目录",
+                                    "not_selected":  "未选择",
+                                    "realtime_logs":  "实时日志",
+                                    "output_file":  "输出文件"
+                                },
+                     "viewer":  {
+                                    "empty":  "暂无日志输出",
+                                    "back_to_bottom":  "回到底部"
+                                },
+                     "favorites":  {
+                                       "title":  "最近收藏",
+                                       "desc":  "点击卡片即可加载命令并快速开始",
+                                       "empty":  "暂无收藏命令",
+                                       "updated_at":  "更新时间",
+                                       "unnamed_command":  "未命名命令"
+                                   },
+                     "dialog":  {
+                                    "title":  "收藏命令",
+                                    "desc":  "填写标题和可选描述，保存当前命令。",
+                                    "title_label":  "命令标题",
+                                    "title_placeholder":  "例如：HEVC 转码",
+                                    "desc_label":  "描述（可选）",
+                                    "desc_placeholder":  "简要说明这个命令的用途"
+                                },
+                     "toast":  {
+                                   "init_failed":  "FFmpeg 初始化失败",
+                                   "get_favorites_failed":  "获取收藏数据失败",
+                                   "ffmpeg_preparing":  "FFmpeg 准备中，请稍候",
+                                   "ffmpeg_not_ready":  "FFmpeg 尚未就绪，请先完成初始化",
+                                   "command_empty":  "命令不能为空",
+                                   "open_output_failed":  "打开目录失败",
+                                   "favorite_title_required":  "请输入命令标题",
+                                   "favorite_saved":  "收藏成功",
+                                   "favorite_save_failed":  "收藏失败",
+                                   "favorite_loaded":  "已载入收藏命令：{{title}}"
+                               }
+                 }
+}

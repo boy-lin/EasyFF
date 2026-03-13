@@ -51,6 +51,7 @@ impl HostOs {
 
 #[derive(Debug, Clone, Copy)]
 pub enum SourceKind {
+    Ling,
     Gyan,
     Btbn,
     JohnVanSickle,
@@ -60,6 +61,7 @@ pub enum SourceKind {
 impl SourceKind {
     pub fn as_str(&self) -> &'static str {
         match self {
+            SourceKind::Ling => "ling",
             SourceKind::Gyan => "gyan",
             SourceKind::Btbn => "btbn",
             SourceKind::JohnVanSickle => "johnvansickle",
@@ -82,7 +84,7 @@ pub fn normalize_os(input: Option<String>) -> HostOs {
 
 pub fn available_sources(os: HostOs) -> Vec<SourceKind> {
     match os {
-        HostOs::Windows => vec![SourceKind::Gyan, SourceKind::Btbn],
+        HostOs::Windows => vec![SourceKind::Ling, SourceKind::Gyan, SourceKind::Btbn],
         HostOs::Linux => vec![SourceKind::JohnVanSickle, SourceKind::Btbn],
         HostOs::Macos => vec![SourceKind::Evermeet, SourceKind::Btbn],
     }
@@ -113,6 +115,34 @@ pub fn fetch_versions(
     arch: Option<String>,
 ) -> Result<Vec<FfmpegVersionItem>> {
     let list = match (source, os) {
+        (SourceKind::Ling, HostOs::Windows) => vec![
+            version_item(
+                SourceKind::Ling,
+                HostOs::Windows,
+                "8.0.1",
+                "2026-03-13",
+                "https://tebi.2342342.xyz/static/ffmpeg/ffmpeg-release-full.7z",
+                Some("x86_64"),
+            ),
+            version_item(
+                SourceKind::Ling,
+                HostOs::Windows,
+                "7.1.1",
+                "2026-03-13",
+                "https://tebi.2342342.xyz/static/ffmpeg/ffmpeg-7.1.1-full_build.7z",
+                Some("x86_64"),
+            )
+        ],
+        (SourceKind::Ling, HostOs::Macos) => vec![
+            version_item(
+                SourceKind::Ling,
+                HostOs::Macos,
+                "8.0.0",
+                "2026-03-13",
+                "https://s3.tebi.io/tebi.2342342.xyz/static/ffmpeg/mac/ffmpeg-8.0.7z",
+                Some("arm64"),
+            )
+        ],
         (SourceKind::Gyan, HostOs::Windows) => vec![
             version_item(
                 SourceKind::Gyan,

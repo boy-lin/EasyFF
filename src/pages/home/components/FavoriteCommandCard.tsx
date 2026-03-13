@@ -1,3 +1,4 @@
+﻿import { useTranslation } from "react-i18next";
 import { EllipsisName } from "@/components/ui-lab/ellipsis-name";
 import { type FavoriteCommandItem } from "@/lib/bridge";
 
@@ -8,6 +9,8 @@ type FavoriteCommandCardProps = {
 };
 
 export function FavoriteCommandCard({ item, updatedAtText, onSelect }: FavoriteCommandCardProps) {
+  const { t } = useTranslation("ffmpeg");
+
   return (
     <article
       className="cursor-pointer rounded-lg border bg-muted/25 p-3 transition-colors hover:bg-muted/40"
@@ -20,8 +23,9 @@ export function FavoriteCommandCard({ item, updatedAtText, onSelect }: FavoriteC
         <EllipsisName name={item.command} startCount={20} />
       </p>
       {item.description && <p className="mt-2 text-xs text-muted-foreground">{item.description}</p>}
-      <p className="mt-2 text-xs text-muted-foreground">更新于: {updatedAtText}</p>
+      <p className="mt-2 text-xs text-muted-foreground">
+        {t("homePage.favorites.updated_at")}: {updatedAtText}
+      </p>
     </article>
   );
 }
-
