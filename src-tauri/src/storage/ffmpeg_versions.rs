@@ -5,6 +5,8 @@ use sqlx::{QueryBuilder, Row, Sqlite};
 use super::db::get_db;
 use crate::shared::get_millis;
 
+pub const SYSTEM_FFMPEG_ROW_KEY: &str = "__system_ffmpeg__";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FfmpegVersionItem {
@@ -434,5 +436,58 @@ pub async fn mark_downloaded(row_key: &str, local_path: &str) -> Result<()> {
     if affected == 0 {
         return Err(anyhow!("ffmpeg version not found"));
     }
+    Ok(())
+}
+
+pub async fn get_system_installation() -> Result<Option<FfmpegVersionItem>> {
+    get_by_row_key(SYSTEM_FFMPEG_ROW_KEY).await
+}
+
+pub async fn upsert_system_installation(
+    os: &str,
+    version: &str,
+    arch: Option<&str>,
+    local_path: &str,
+) -> Result<()> {
+    let pool = get_db().await?;
+    sqlx::query(
+        r#"
+        INSERT INTO ffmpeg_versions
+            (row_key, source, os, version, published_at, download_url, arch, local_path, updated_at, download_state, installed, is_active)
+        VALUES
+            (?1, 'System', ?2, ?3, NULL, NULL, ?4, ?5, ?6, 'downloaded', 1, 0)
+        ON CONFLICT(row_key) DO UPDATE SET
+            source = excluded.source,
+            os = excluded.os,
+            version = excluded.version,
+            arch = excluded.arch,
+            local_path = excluded.local_path,
+            updated_at = excluded.updated_at,
+            download_state = 'downloaded',
+            installed = 1
+        "#,
+    )
+    .bind(SYSTEM_FFMPEG_ROW_KEY)
+    .bind(os)
+    .bind(version)
+    .bind(arch)
+    .bind(local_path)
+    .bind(get_millis())
+    .execute(&pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn clear_system_installation() -> Result<()> {
+    let pool = get_db().await?;
+    sqlx::query(
+        r#"
+        DELETE FROM ffmpeg_versions
+        WHERE row_key = ?1
+        "#,
+    )
+    .bind(SYSTEM_FFMPEG_ROW_KEY)
+    .execute(&pool)
+    .await?;
     Ok(())
 }

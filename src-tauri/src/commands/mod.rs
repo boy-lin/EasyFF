@@ -5,12 +5,16 @@ use std::fs::File;
 use std::io::{self, Read, Write};
 use std::path::Path;
 use std::path::PathBuf;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::command;
 use tauri::AppHandle;
 use tauri::{Emitter, Manager};
+
+const SYSTEM_FFMPEG_CACHE_TTL_MS: i64 = 6 * 60 * 60 * 1000;
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -73,6 +77,262 @@ fn probe_ffmpeg_binary(bin: &str) -> Option<(String, String)> {
     Some((first_line.to_string(), bin.to_string()))
 }
 
+fn push_candidate(candidates: &mut Vec<String>, candidate: impl Into<String>) {
+    let candidate = candidate.into();
+    let trimmed = candidate.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    if !candidates.iter().any(|item| item == trimmed) {
+        candidates.push(trimmed.to_string());
+    }
+}
+
+fn push_ffmpeg_from_dir(candidates: &mut Vec<String>, dir: &Path) {
+    let file_name = if cfg!(target_os = "windows") {
+        "ffmpeg.exe"
+    } else {
+        "ffmpeg"
+    };
+    let candidate = dir.join(file_name);
+    if candidate.exists() {
+        push_candidate(candidates, candidate.to_string_lossy().to_string());
+    }
+}
+
+#[cfg(unix)]
+fn is_executable_file(path: &Path) -> bool {
+    fs::metadata(path)
+        .map(|meta| meta.is_file() && (meta.permissions().mode() & 0o111 != 0))
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn is_executable_file(path: &Path) -> bool {
+    path.is_file()
+}
+
+fn collect_path_dirs_from_env() -> Vec<PathBuf> {
+    std::env::var_os("PATH")
+        .map(|paths| std::env::split_paths(&paths).collect())
+        .unwrap_or_default()
+}
+
+#[cfg(target_os = "windows")]
+fn collect_windows_ffmpeg_dirs() -> Vec<PathBuf> {
+    let mut dirs = collect_path_dirs_from_env();
+
+    if let Some(program_files) = std::env::var_os("ProgramFiles") {
+        let path = PathBuf::from(program_files).join("ffmpeg").join("bin");
+        if !dirs.iter().any(|item| item == &path) {
+            dirs.push(path);
+        }
+    }
+    if let Some(program_files_x86) = std::env::var_os("ProgramFiles(x86)") {
+        let path = PathBuf::from(program_files_x86).join("ffmpeg").join("bin");
+        if !dirs.iter().any(|item| item == &path) {
+            dirs.push(path);
+        }
+    }
+    if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+        for suffix in [
+            ["Microsoft", "WinGet", "Links"].as_slice(),
+            ["Programs", "ffmpeg", "bin"].as_slice(),
+            ["Programs", "Microsoft VS Code", "bin"].as_slice(),
+            ["scoop", "shims"].as_slice(),
+            ["scoop", "apps", "ffmpeg", "current", "bin"].as_slice(),
+        ] {
+            let mut path = PathBuf::from(&local_app_data);
+            for part in suffix {
+                path.push(part);
+            }
+            if !dirs.iter().any(|item| item == &path) {
+                dirs.push(path);
+            }
+        }
+    }
+    if let Some(choco_install) = std::env::var_os("ChocolateyInstall") {
+        let path = PathBuf::from(choco_install).join("bin");
+        if !dirs.iter().any(|item| item == &path) {
+            dirs.push(path);
+        }
+    }
+
+    dirs
+}
+
+#[cfg(target_os = "macos")]
+fn collect_macos_ffmpeg_dirs() -> Vec<PathBuf> {
+    let mut dirs = collect_path_dirs_from_env();
+
+    for known in [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/opt/local/bin",
+        "/run/current-system/sw/bin",
+        "/nix/var/nix/profiles/default/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+    ] {
+        let path = PathBuf::from(known);
+        if !dirs.iter().any(|item| item == &path) {
+            dirs.push(path);
+        }
+    }
+
+    if let Ok(output) = Command::new("/usr/libexec/path_helper").arg("-s").output() {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for segment in stdout.split('"') {
+                if segment.contains('/') {
+                    for dir in std::env::split_paths(segment) {
+                        if !dirs.iter().any(|item| item == &dir) {
+                            dirs.push(dir);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if let Ok(output) = Command::new("/bin/zsh")
+        .args(["-l", "-c", "command -v ffmpeg 2>/dev/null"])
+        .output()
+    {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let resolved = stdout.trim();
+            if !resolved.is_empty() {
+                let path = PathBuf::from(resolved);
+                if let Some(parent) = path.parent() {
+                    if !dirs.iter().any(|item| item == parent) {
+                        dirs.push(parent.to_path_buf());
+                    }
+                }
+            }
+        }
+    }
+
+    dirs
+}
+
+#[cfg(target_os = "linux")]
+fn collect_linux_ffmpeg_dirs() -> Vec<PathBuf> {
+    let mut dirs = collect_path_dirs_from_env();
+
+    for known in [
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/snap/bin",
+        "/var/lib/flatpak/exports/bin",
+        "/run/current-system/sw/bin",
+        "/nix/var/nix/profiles/default/bin",
+    ] {
+        let path = PathBuf::from(known);
+        if !dirs.iter().any(|item| item == &path) {
+            dirs.push(path);
+        }
+    }
+
+    if let Some(home) = dirs::home_dir() {
+        for suffix in [
+            [".local", "bin"].as_slice(),
+            ["bin"].as_slice(),
+            [".nix-profile", "bin"].as_slice(),
+        ] {
+            let mut path = home.clone();
+            for part in suffix {
+                path.push(part);
+            }
+            if !dirs.iter().any(|item| item == &path) {
+                dirs.push(path);
+            }
+        }
+    }
+
+    dirs
+}
+
+fn detect_system_ffmpeg() -> Option<(String, String)> {
+    probe_global_ffmpeg(None)
+}
+
+fn is_valid_cached_ffmpeg(item: &crate::storage::ffmpeg_versions::FfmpegVersionItem) -> bool {
+    item.installed
+        && item.row_key == crate::storage::ffmpeg_versions::SYSTEM_FFMPEG_ROW_KEY
+        && item
+            .local_path
+            .as_ref()
+            .map(|path| {
+                let trimmed = path.trim();
+                !trimmed.is_empty() && is_executable_file(Path::new(trimmed))
+            })
+            .unwrap_or(false)
+}
+
+fn should_refresh_system_cache(item: &crate::storage::ffmpeg_versions::FfmpegVersionItem) -> bool {
+    let age = crate::shared::get_millis().saturating_sub(item.updated_at);
+    age >= SYSTEM_FFMPEG_CACHE_TTL_MS
+}
+
+async fn resolve_system_ffmpeg_item(
+) -> Result<Option<crate::storage::ffmpeg_versions::FfmpegVersionItem>, String> {
+    let cached = crate::storage::ffmpeg_versions::get_system_installation()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if let Some(item) = cached.as_ref() {
+        if is_valid_cached_ffmpeg(item) && !should_refresh_system_cache(item) {
+            return Ok(Some(item.clone()));
+        }
+    }
+
+    let probe = tauri::async_runtime::spawn_blocking(detect_system_ffmpeg)
+        .await
+        .map_err(|e| format!("[JOIN:resolve_system_ffmpeg_item] {}", e))?;
+
+    if let Some((display_version, executable_path)) = probe {
+        let version = parse_ffmpeg_semver(display_version.as_str());
+        crate::storage::ffmpeg_versions::upsert_system_installation(
+            detect_host_os().as_str(),
+            version.as_str(),
+            Some(std::env::consts::ARCH),
+            executable_path.as_str(),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+        return Ok(Some(crate::storage::ffmpeg_versions::FfmpegVersionItem {
+            row_key: crate::storage::ffmpeg_versions::SYSTEM_FFMPEG_ROW_KEY.to_string(),
+            source: "System".to_string(),
+            os: detect_host_os(),
+            version,
+            published_at: None,
+            download_url: None,
+            arch: Some(std::env::consts::ARCH.to_string()),
+            local_path: Some(executable_path),
+            updated_at: crate::shared::get_millis(),
+            download_state: "downloaded".to_string(),
+            installed: true,
+            is_active: false,
+        }));
+    }
+
+    if cached
+        .as_ref()
+        .map(is_valid_cached_ffmpeg)
+        .unwrap_or(false)
+    {
+        return Ok(cached);
+    }
+
+    let _ = crate::storage::ffmpeg_versions::clear_system_installation().await;
+    Ok(None)
+}
+
 fn build_ffmpeg_probe_candidates(active_path: Option<&str>) -> Vec<String> {
     let mut candidates: Vec<String> = Vec::new();
 
@@ -81,38 +341,56 @@ fn build_ffmpeg_probe_candidates(active_path: Option<&str>) -> Vec<String> {
         .filter(|v| !v.is_empty())
         .map(|v| v.to_string())
     {
-        candidates.push(path);
+        push_candidate(&mut candidates, path);
     }
 
     if cfg!(target_os = "windows") {
+        #[cfg(target_os = "windows")]
+        {
+            for dir in collect_windows_ffmpeg_dirs() {
+                push_ffmpeg_from_dir(&mut candidates, &dir);
+            }
+        }
+
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
                 let local = exe_dir.join("ffmpeg.exe");
                 if local.exists() {
-                    candidates.push(local.to_string_lossy().to_string());
+                    push_candidate(&mut candidates, local.to_string_lossy().to_string());
                 }
             }
         }
-        candidates.push("ffmpeg.exe".to_string());
-        candidates.push("ffmpeg".to_string());
+        push_candidate(&mut candidates, "ffmpeg.exe");
+        push_candidate(&mut candidates, "ffmpeg");
     } else {
-        candidates.push("ffmpeg".to_string());
+        #[cfg(target_os = "macos")]
+        {
+            for dir in collect_macos_ffmpeg_dirs() {
+                push_ffmpeg_from_dir(&mut candidates, &dir);
+            }
+        }
+        #[cfg(target_os = "linux")]
+        {
+            for dir in collect_linux_ffmpeg_dirs() {
+                push_ffmpeg_from_dir(&mut candidates, &dir);
+            }
+        }
+
+        push_candidate(&mut candidates, "ffmpeg");
     }
 
-    let mut deduped: Vec<String> = Vec::new();
-    for item in candidates {
-        if !deduped.iter().any(|v| v == &item) {
-            deduped.push(item);
-        }
-    }
-    deduped
+    candidates
 }
 
 fn probe_global_ffmpeg(active_path: Option<&str>) -> Option<(String, String)> {
     let candidates = build_ffmpeg_probe_candidates(active_path);
     for bin in candidates {
-        if let Some((version, _)) = probe_ffmpeg_binary(bin.as_str()) {
-            return Some((version, bin));
+        let path = Path::new(bin.as_str());
+        if path.components().count() > 1 && !is_executable_file(path) {
+            continue;
+        }
+        if let Some((version, executable_path)) = probe_ffmpeg_binary(bin.as_str()) {
+            return Some((version, executable_path));
         }
     }
     None
@@ -125,31 +403,19 @@ async fn list_installed_ffmpeg_versions_with_system(
         .map_err(|e| e.to_string())?;
 
     let has_active = installed.iter().any(|item| item.is_active);
-    let has_system_row = installed
-        .iter()
-        .any(|item| item.row_key == "__system_ffmpeg__");
+    let system_index = installed.iter().position(|item| {
+        item.row_key == crate::storage::ffmpeg_versions::SYSTEM_FFMPEG_ROW_KEY
+    });
 
-    let system_probe = tauri::async_runtime::spawn_blocking(|| probe_global_ffmpeg(None))
-        .await
-        .map_err(|e| format!("[JOIN:list_installed_ffmpeg_versions] {}", e))?;
-
-    if !has_system_row {
-        if let Some((display_version, executable_path)) = system_probe {
-            installed.push(crate::storage::ffmpeg_versions::FfmpegVersionItem {
-                row_key: "__system_ffmpeg__".to_string(),
-                source: "System".to_string(),
-                os: detect_host_os(),
-                version: parse_ffmpeg_semver(display_version.as_str()),
-                published_at: None,
-                download_url: None,
-                arch: Some(std::env::consts::ARCH.to_string()),
-                local_path: Some(executable_path),
-                updated_at: 0,
-                download_state: "downloaded".to_string(),
-                installed: true,
-                is_active: !has_active,
-            });
+    if let Some(mut system_item) = resolve_system_ffmpeg_item().await? {
+        system_item.is_active = !has_active;
+        if let Some(index) = system_index {
+            installed[index] = system_item;
+        } else {
+            installed.push(system_item);
         }
+    } else if let Some(index) = system_index {
+        installed.remove(index);
     }
 
     Ok(installed)
@@ -213,7 +479,6 @@ pub struct TaskHistoryItem {
     pub id: Option<String>,
 }
 
-
 fn collect_files_recursive(root: &Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
     if !root.exists() {
         return Ok(());
@@ -257,8 +522,7 @@ pub async fn export_logs_archive(app: AppHandle) -> Result<String, String> {
             .path()
             .app_log_dir()
             .map_err(|e| format!("resolve app_log_dir failed: {}", e))?;
-        fs::create_dir_all(&log_dir)
-            .map_err(|e| format!("create app_log_dir failed: {}", e))?;
+        fs::create_dir_all(&log_dir).map_err(|e| format!("create app_log_dir failed: {}", e))?;
 
         let mut files = Vec::new();
         collect_files_recursive(&log_dir, &mut files)
@@ -271,12 +535,11 @@ pub async fn export_logs_archive(app: AppHandle) -> Result<String, String> {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or_default();
-        let zip_path = std::env::temp_dir().join(format!("viko-logs-{}.zip", ts));
-        let file = File::create(&zip_path)
-            .map_err(|e| format!("create zip failed: {}", e))?;
+        let zip_path = std::env::temp_dir().join(format!("easy_ff-logs-{}.zip", ts));
+        let file = File::create(&zip_path).map_err(|e| format!("create zip failed: {}", e))?;
         let mut zip = zip::ZipWriter::new(file);
-        let options = zip::write::FileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated);
+        let options =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
         for src in files {
             let rel = src
@@ -420,9 +683,9 @@ pub async fn auth_exchange_code(input: AuthExchangeCodeInput) -> Result<AuthToke
     ))
 }
 
-
 #[command]
-pub async fn updater_guard_report_success() -> Result<crate::storage::updater_guard::UpdaterGuardStatus, String> {
+pub async fn updater_guard_report_success(
+) -> Result<crate::storage::updater_guard::UpdaterGuardStatus, String> {
     crate::storage::updater_guard::record_success()
         .await
         .map_err(|e| e.to_string())?;
@@ -444,7 +707,8 @@ pub async fn updater_guard_report_failure(
 }
 
 #[command]
-pub async fn updater_guard_get_status() -> Result<crate::storage::updater_guard::UpdaterGuardStatus, String> {
+pub async fn updater_guard_get_status(
+) -> Result<crate::storage::updater_guard::UpdaterGuardStatus, String> {
     crate::storage::updater_guard::get_status()
         .await
         .map_err(|e| e.to_string())
@@ -689,12 +953,8 @@ fn extract_gz(archive_path: &Path, target_dir: &Path) -> Result<(), String> {
 }
 
 fn extract_7z_with_system(archive_path: &Path, target_dir: &Path) -> Result<(), String> {
-    sevenz_rust::decompress_file(archive_path, target_dir).map_err(|e| {
-        format!(
-            "7z extraction failed: {}. try a zip/tar.xz source",
-            e
-        )
-    })
+    sevenz_rust::decompress_file(archive_path, target_dir)
+        .map_err(|e| format!("7z extraction failed: {}. try a zip/tar.xz source", e))
 }
 
 fn find_ffmpeg_binary(root: &Path) -> Option<PathBuf> {
@@ -1044,9 +1304,10 @@ pub async fn get_current_ffmpeg_version() -> Result<serde_json::Value, String> {
         .as_ref()
         .map(|v| format!("{} ({})", v.version, v.source));
 
-    let probe = tauri::async_runtime::spawn_blocking(move || probe_global_ffmpeg(active_path.as_deref()))
-    .await
-    .map_err(|e| format!("[JOIN:get_current_ffmpeg_version] {}", e))?;
+    let probe =
+        tauri::async_runtime::spawn_blocking(move || probe_global_ffmpeg(active_path.as_deref()))
+            .await
+            .map_err(|e| format!("[JOIN:get_current_ffmpeg_version] {}", e))?;
 
     if let Some((version, executable_path)) = probe {
         return Ok(serde_json::json!({
@@ -1169,5 +1430,3 @@ pub async fn set_favorite_command_sync_cursor(
         .await
         .map_err(|e| e.to_string())
 }
-
-
