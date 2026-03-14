@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "easyff",
+  "productName": "easyFF",
   "version": "0.1.7",
   "identifier": "com.easyff",
   "build": {
@@ -13,7 +13,7 @@
   "app": {
     "windows": [
       {
-        "title": "easyff",
+        "title": "easyFF",
         "width": 980,
         "height": 600,
         "minWidth": 980,
