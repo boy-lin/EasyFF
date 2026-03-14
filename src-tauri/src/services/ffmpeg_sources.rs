@@ -87,8 +87,8 @@ pub fn normalize_os(input: Option<String>) -> HostOs {
 pub fn available_sources(os: HostOs) -> Vec<SourceKind> {
     match os {
         HostOs::Windows => vec![SourceKind::Ling, SourceKind::Gyan, SourceKind::Btbn],
-        HostOs::Linux => vec![SourceKind::JohnVanSickle, SourceKind::Btbn],
-        HostOs::Macos => vec![SourceKind::Evermeet, SourceKind::Btbn, SourceKind::Eugeneware],
+        HostOs::Linux => vec![SourceKind::Ling, SourceKind::JohnVanSickle, SourceKind::Btbn],
+        HostOs::Macos => vec![SourceKind::Ling, SourceKind::Evermeet, SourceKind::Btbn, SourceKind::Eugeneware],
     }
 }
 

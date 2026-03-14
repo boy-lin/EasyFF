@@ -3,10 +3,10 @@ use std::collections::HashSet;
 use std::fs;
 use std::fs::File;
 use std::io::{self, Read, Write};
-use std::path::Path;
-use std::path::PathBuf;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
+use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -321,11 +321,7 @@ async fn resolve_system_ffmpeg_item(
         }));
     }
 
-    if cached
-        .as_ref()
-        .map(is_valid_cached_ffmpeg)
-        .unwrap_or(false)
-    {
+    if cached.as_ref().map(is_valid_cached_ffmpeg).unwrap_or(false) {
         return Ok(cached);
     }
 
@@ -403,9 +399,9 @@ async fn list_installed_ffmpeg_versions_with_system(
         .map_err(|e| e.to_string())?;
 
     let has_active = installed.iter().any(|item| item.is_active);
-    let system_index = installed.iter().position(|item| {
-        item.row_key == crate::storage::ffmpeg_versions::SYSTEM_FFMPEG_ROW_KEY
-    });
+    let system_index = installed
+        .iter()
+        .position(|item| item.row_key == crate::storage::ffmpeg_versions::SYSTEM_FFMPEG_ROW_KEY);
 
     if let Some(mut system_item) = resolve_system_ffmpeg_item().await? {
         system_item.is_active = !has_active;
@@ -535,7 +531,7 @@ pub async fn export_logs_archive(app: AppHandle) -> Result<String, String> {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or_default();
-        let zip_path = std::env::temp_dir().join(format!("easy_ff-logs-{}.zip", ts));
+        let zip_path = std::env::temp_dir().join(format!("easyff-logs-{}.zip", ts));
         let file = File::create(&zip_path).map_err(|e| format!("create zip failed: {}", e))?;
         let mut zip = zip::ZipWriter::new(file);
         let options =
