@@ -295,9 +295,11 @@ async fn resolve_system_ffmpeg_item(
         .map_err(|e| format!("[JOIN:resolve_system_ffmpeg_item] {}", e))?;
 
     if let Some((display_version, executable_path)) = probe {
+        let host_os = detect_host_os();
+        let cached_is_active = cached.as_ref().map(|item| item.is_active).unwrap_or(false);
         let version = parse_ffmpeg_semver(display_version.as_str());
         crate::storage::ffmpeg_versions::upsert_system_installation(
-            detect_host_os().as_str(),
+            host_os.as_str(),
             version.as_str(),
             Some(std::env::consts::ARCH),
             executable_path.as_str(),
@@ -308,7 +310,7 @@ async fn resolve_system_ffmpeg_item(
         return Ok(Some(crate::storage::ffmpeg_versions::FfmpegVersionItem {
             row_key: crate::storage::ffmpeg_versions::SYSTEM_FFMPEG_ROW_KEY.to_string(),
             source: "System".to_string(),
-            os: detect_host_os(),
+            os: host_os,
             version,
             published_at: None,
             download_url: None,
@@ -317,7 +319,7 @@ async fn resolve_system_ffmpeg_item(
             updated_at: crate::shared::get_millis(),
             download_state: "downloaded".to_string(),
             installed: true,
-            is_active: false,
+            is_active: cached_is_active,
         }));
     }
 
@@ -398,13 +400,11 @@ async fn list_installed_ffmpeg_versions_with_system(
         .await
         .map_err(|e| e.to_string())?;
 
-    let has_active = installed.iter().any(|item| item.is_active);
     let system_index = installed
         .iter()
         .position(|item| item.row_key == crate::storage::ffmpeg_versions::SYSTEM_FFMPEG_ROW_KEY);
 
-    if let Some(mut system_item) = resolve_system_ffmpeg_item().await? {
-        system_item.is_active = !has_active;
+    if let Some(system_item) = resolve_system_ffmpeg_item().await? {
         if let Some(index) = system_index {
             installed[index] = system_item;
         } else {
@@ -1239,7 +1239,10 @@ pub async fn activate_ffmpeg_version(row_key: String) -> Result<(), String> {
         return Err("row_key is required".to_string());
     }
     if key == "__system_ffmpeg__" {
-        return crate::storage::ffmpeg_versions::deactivate_all()
+        if resolve_system_ffmpeg_item().await?.is_none() {
+            return Err("system ffmpeg not found".to_string());
+        }
+        return crate::storage::ffmpeg_versions::activate(key.as_str())
             .await
             .map_err(|e| e.to_string());
     }

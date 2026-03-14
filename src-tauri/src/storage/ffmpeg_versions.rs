@@ -93,6 +93,7 @@ pub async fn init() -> Result<()> {
     .await?;
 
     ensure_latest_schema().await?;
+    recover_incomplete_downloads().await?;
     seed_static_data().await?;
     Ok(())
 }
@@ -490,4 +491,23 @@ pub async fn clear_system_installation() -> Result<()> {
     .execute(&pool)
     .await?;
     Ok(())
+}
+
+pub async fn recover_incomplete_downloads() -> Result<u64> {
+    let pool = get_db().await?;
+    let result = sqlx::query(
+        r#"
+        UPDATE ffmpeg_versions
+        SET download_state = CASE
+                WHEN installed = 1 THEN 'downloaded'
+                ELSE 'failed'
+            END,
+            updated_at = ?1
+        WHERE download_state = 'downloading'
+        "#,
+    )
+    .bind(get_millis())
+    .execute(&pool)
+    .await?;
+    Ok(result.rows_affected())
 }

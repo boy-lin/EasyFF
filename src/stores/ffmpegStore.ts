@@ -99,8 +99,7 @@ const mergeInstalledWithPending = (
   const rowKeySet = new Set(rows.map((item) => item.rowKey));
   const pendingFromPrev = prev.filter(
     (item) =>
-      (item.downloadState === "downloading" ||
-        progress[item.rowKey] !== undefined) &&
+      progress[item.rowKey] !== undefined &&
       !rowKeySet.has(item.rowKey),
   );
   return [...rows, ...pendingFromPrev];
@@ -127,7 +126,8 @@ export const useFfmpegStore = create<FfmpegStore>()(
           if (!get().sourceMessage) {
             set({ sourceMessage: { key: "source.loading" } });
           }
-          await Promise.all([get().refreshRuntime(), get().refreshAll()]);
+          await get().refreshAll();
+          await get().refreshRuntime();
         } catch (error) {
           console.error("init ffmpeg store failed:", error);
           set({ sourceMessage: { key: "source.query_failed" } });
