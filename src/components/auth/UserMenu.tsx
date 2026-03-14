@@ -33,13 +33,23 @@ export const UserMenu = () => {
     () => userInfo?.name  || t("auth.user_menu.default_user"),
     [userInfo]
   );
+
+  const clearLoggedInState = () => {
+    analytics.reset();
+    clearDesktopToken();
+    setDesktopLoggedIn(false);
+    clearUser();
+    resetFavoriteSyncState();
+  };
+
   useEffect(() => {
     if (isLoggedIn) {
       fetchUserInfo().catch((e: any) => {
+        clearLoggedInState();
         toast.error(e.message || t("auth.user_menu.toast.fetch_user_failed"));
       });
     }
-  }, [isLoggedIn, fetchUserInfo]);
+  }, [isLoggedIn, fetchUserInfo, t]);
 
   useEffect(() => {
     setDesktopLoggedIn(hasDesktopAccessToken());
@@ -101,11 +111,7 @@ export const UserMenu = () => {
       if (userInfo) {
         await signOut();
       }
-      analytics.reset();
-      clearDesktopToken();
-      setDesktopLoggedIn(false);
-      clearUser();
-      resetFavoriteSyncState();
+      clearLoggedInState();
       toast.success(t("auth.user_menu.toast.signed_out"));
     } catch (e) {
       toast.error(t("auth.user_menu.toast.sign_out_failed"));
@@ -136,7 +142,10 @@ export const UserMenu = () => {
           onOpenChange={setDialogOpen}
           onSuccess={() => {
             setDialogOpen(false);
-            fetchUserInfo();
+            fetchUserInfo().catch((e: any) => {
+              clearLoggedInState();
+              toast.error(e?.message || t("auth.user_menu.toast.fetch_user_failed"));
+            });
           }}
         />
       </>
