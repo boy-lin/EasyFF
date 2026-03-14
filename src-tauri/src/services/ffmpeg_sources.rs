@@ -295,6 +295,22 @@ pub fn fetch_versions(
                 "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-darwin-x64.gz",
                 Some("x64"),
             ),
+            version_item(
+                SourceKind::Eugeneware,
+                HostOs::Macos,
+                "5.0.1",
+                "2022-06-29",
+                "https://github.com/eugeneware/ffmpeg-static/releases/download/b5.0.1/darwin-arm64.gz",
+                Some("arm64"),
+            ),
+            version_item(
+                SourceKind::Eugeneware,
+                HostOs::Macos,
+                "5.0.1",
+                "2022-06-29",
+                "https://github.com/eugeneware/ffmpeg-static/releases/download/b5.0.1/darwin-x64.gz",
+                Some("x64"),
+            ),
             
         ],
         _ => Vec::new(),
