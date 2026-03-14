@@ -6,11 +6,11 @@ pub static WORKING_PATH: LazyLock<PathBuf> =
 
 pub static STORAGE_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
     let mut path = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
-    path.push("easyffdb");
+    path.push("easyff");
     if !path.exists() {
         std::fs::create_dir_all(&path).ok();
     }
-    path.push("easyffdb.db");
+    path.push("easyff.db");
     path
 });
 
