@@ -62,19 +62,99 @@ fn parse_ffmpeg_semver(version_line: &str) -> String {
     version_line.trim().to_string()
 }
 
+fn decode_bytes_for_log(bytes: &[u8]) -> String {
+    if let Ok(text) = String::from_utf8(bytes.to_vec()) {
+        return text;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let (text, _, _) = encoding_rs::GBK.decode(bytes);
+        return text.into_owned();
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        String::from_utf8_lossy(bytes).into_owned()
+    }
+}
+
 fn probe_ffmpeg_binary(bin: &str) -> Option<(String, String)> {
+    let summarize_stderr = |bytes: &[u8]| -> String {
+        decode_bytes_for_log(bytes)
+            .lines()
+            .find(|line| !line.trim().is_empty())
+            .map(|line| line.trim().to_string())
+            .unwrap_or_default()
+    };
+
     let mut cmd = Command::new(bin);
     apply_no_window(&mut cmd);
-    let output = cmd.arg("-version").output().ok()?;
-    if !output.status.success() {
-        return None;
+    let output = cmd.arg("-version").output();
+    match output {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let first_line = stdout.lines().next()?.trim();
+            if first_line.is_empty() {
+                log::warn!("[FFMPEG:PROBE] candidate={} empty version output", bin);
+                return None;
+            }
+            return Some((first_line.to_string(), bin.to_string()));
+        }
+        Ok(output) => {
+            log::warn!(
+                "[FFMPEG:PROBE] candidate={} direct exec failed status={:?} stderr={}",
+                bin,
+                output.status.code(),
+                summarize_stderr(&output.stderr)
+            );
+        }
+        Err(err) => {
+            log::warn!(
+                "[FFMPEG:PROBE] candidate={} direct exec spawn error: {}",
+                bin,
+                err
+            );
+        }
     }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let first_line = stdout.lines().next()?.trim();
-    if first_line.is_empty() {
-        return None;
+
+    #[cfg(target_os = "windows")]
+    {
+        if Path::new(bin).components().count() > 1 {
+            let mut fallback = Command::new("cmd");
+            apply_no_window(&mut fallback);
+            let wrapped = format!("\"{}\" -version", bin.replace('"', "\\\""));
+            match fallback.args(["/C", wrapped.as_str()]).output() {
+                Ok(output) if output.status.success() => {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let first_line = stdout.lines().next()?.trim();
+                    if first_line.is_empty() {
+                        log::warn!(
+                            "[FFMPEG:PROBE] candidate={} cmd fallback empty version output",
+                            bin
+                        );
+                        return None;
+                    }
+                    return Some((first_line.to_string(), bin.to_string()));
+                }
+                Ok(output) => {
+                    log::warn!(
+                        "[FFMPEG:PROBE] candidate={} cmd fallback failed status={:?} stderr={}",
+                        bin,
+                        output.status.code(),
+                        summarize_stderr(&output.stderr)
+                    );
+                }
+                Err(err) => {
+                    log::warn!(
+                        "[FFMPEG:PROBE] candidate={} cmd fallback spawn error: {}",
+                        bin,
+                        err
+                    );
+                }
+            }
+        }
     }
-    Some((first_line.to_string(), bin.to_string()))
+
+    None
 }
 
 fn push_candidate(candidates: &mut Vec<String>, candidate: impl Into<String>) {
@@ -88,6 +168,7 @@ fn push_candidate(candidates: &mut Vec<String>, candidate: impl Into<String>) {
     }
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn push_ffmpeg_from_dir(candidates: &mut Vec<String>, dir: &Path) {
     let file_name = if cfg!(target_os = "windows") {
         "ffmpeg.exe"
@@ -112,82 +193,11 @@ fn is_executable_file(path: &Path) -> bool {
     path.is_file()
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn collect_path_dirs_from_env() -> Vec<PathBuf> {
     std::env::var_os("PATH")
         .map(|paths| std::env::split_paths(&paths).collect())
         .unwrap_or_default()
-}
-
-#[cfg(target_os = "windows")]
-fn collect_windows_ffmpeg_dirs() -> Vec<PathBuf> {
-    let mut dirs = collect_path_dirs_from_env();
-
-    #[cfg(target_os = "windows")]
-    fn extend_dirs_from_registry_path(dirs: &mut Vec<PathBuf>, path_value: &str) {
-        for dir in std::env::split_paths(path_value) {
-            if !dirs.iter().any(|item| item == &dir) {
-                dirs.push(dir);
-            }
-        }
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        use winreg::RegKey;
-        use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
-
-        if let Ok(env) = RegKey::predef(HKEY_CURRENT_USER).open_subkey("Environment") {
-            if let Ok(path_value) = env.get_value::<String, _>("Path") {
-                extend_dirs_from_registry_path(&mut dirs, path_value.as_str());
-            }
-        }
-
-        if let Ok(env) = RegKey::predef(HKEY_LOCAL_MACHINE)
-            .open_subkey("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment")
-        {
-            if let Ok(path_value) = env.get_value::<String, _>("Path") {
-                extend_dirs_from_registry_path(&mut dirs, path_value.as_str());
-            }
-        }
-    }
-
-    if let Some(program_files) = std::env::var_os("ProgramFiles") {
-        let path = PathBuf::from(program_files).join("ffmpeg").join("bin");
-        if !dirs.iter().any(|item| item == &path) {
-            dirs.push(path);
-        }
-    }
-    if let Some(program_files_x86) = std::env::var_os("ProgramFiles(x86)") {
-        let path = PathBuf::from(program_files_x86).join("ffmpeg").join("bin");
-        if !dirs.iter().any(|item| item == &path) {
-            dirs.push(path);
-        }
-    }
-    if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
-        for suffix in [
-            ["Microsoft", "WinGet", "Links"].as_slice(),
-            ["Programs", "ffmpeg", "bin"].as_slice(),
-            ["Programs", "Microsoft VS Code", "bin"].as_slice(),
-            ["scoop", "shims"].as_slice(),
-            ["scoop", "apps", "ffmpeg", "current", "bin"].as_slice(),
-        ] {
-            let mut path = PathBuf::from(&local_app_data);
-            for part in suffix {
-                path.push(part);
-            }
-            if !dirs.iter().any(|item| item == &path) {
-                dirs.push(path);
-            }
-        }
-    }
-    if let Some(choco_install) = std::env::var_os("ChocolateyInstall") {
-        let path = PathBuf::from(choco_install).join("bin");
-        if !dirs.iter().any(|item| item == &path) {
-            dirs.push(path);
-        }
-    }
-
-    dirs
 }
 
 #[cfg(target_os = "macos")]
@@ -289,6 +299,66 @@ fn detect_system_ffmpeg() -> Option<(String, String)> {
     probe_global_ffmpeg(None)
 }
 
+#[cfg(target_os = "windows")]
+fn collect_windows_where_ffmpeg_candidates() -> Vec<String> {
+    let mut cmd = Command::new("where.exe");
+    apply_no_window(&mut cmd);
+    match cmd.arg("ffmpeg").output() {
+        Ok(output) if output.status.success() => String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(|line| line.trim().to_string())
+            .filter(|line| !line.is_empty())
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn collect_windows_winget_package_ffmpeg_candidates() -> Vec<String> {
+    let mut candidates = Vec::new();
+    let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") else {
+        return candidates;
+    };
+    let packages_root = PathBuf::from(local_app_data)
+        .join("Microsoft")
+        .join("WinGet")
+        .join("Packages");
+    let Ok(entries) = fs::read_dir(&packages_root) else {
+        return candidates;
+    };
+    for entry in entries.flatten() {
+        let package_dir = entry.path();
+        if !package_dir.is_dir() {
+            continue;
+        }
+        let name = package_dir
+            .file_name()
+            .and_then(|v| v.to_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if !name.contains("ffmpeg") {
+            continue;
+        }
+        if let Some(bin) = find_ffmpeg_binary(&package_dir) {
+            push_candidate(&mut candidates, bin.to_string_lossy().to_string());
+        }
+    }
+    candidates
+}
+
+fn summarize_probe_candidates(candidates: &[String], limit: usize) -> String {
+    let shown: Vec<String> = candidates
+        .iter()
+        .take(limit)
+        .map(|item| item.to_string())
+        .collect();
+    if candidates.len() > limit {
+        format!("{} ... (total={})", shown.join(", "), candidates.len())
+    } else {
+        shown.join(", ")
+    }
+}
+
 fn is_valid_cached_ffmpeg(item: &crate::storage::ffmpeg_versions::FfmpegVersionItem) -> bool {
     item.installed
         && item.row_key == crate::storage::ffmpeg_versions::SYSTEM_FFMPEG_ROW_KEY
@@ -309,14 +379,24 @@ fn should_refresh_system_cache(item: &crate::storage::ffmpeg_versions::FfmpegVer
 
 async fn resolve_system_ffmpeg_item(
 ) -> Result<Option<crate::storage::ffmpeg_versions::FfmpegVersionItem>, String> {
+    log::info!("[FFMPEG:SYSTEM] resolve start");
     let cached = crate::storage::ffmpeg_versions::get_system_installation()
         .await
         .map_err(|e| e.to_string())?;
 
     if let Some(item) = cached.as_ref() {
+        log::info!(
+            "[FFMPEG:SYSTEM] cache found, valid={}, refresh_needed={}, local_path={}",
+            is_valid_cached_ffmpeg(item),
+            should_refresh_system_cache(item),
+            item.local_path.as_deref().unwrap_or("")
+        );
         if is_valid_cached_ffmpeg(item) && !should_refresh_system_cache(item) {
+            log::info!("[FFMPEG:SYSTEM] use cache directly");
             return Ok(Some(item.clone()));
         }
+    } else {
+        log::info!("[FFMPEG:SYSTEM] no cache");
     }
 
     let probe = tauri::async_runtime::spawn_blocking(detect_system_ffmpeg)
@@ -324,6 +404,11 @@ async fn resolve_system_ffmpeg_item(
         .map_err(|e| format!("[JOIN:resolve_system_ffmpeg_item] {}", e))?;
 
     if let Some((display_version, executable_path)) = probe {
+        log::info!(
+            "[FFMPEG:SYSTEM] probe success: {} @ {}",
+            display_version,
+            executable_path
+        );
         let host_os = detect_host_os();
         let cached_is_active = cached.as_ref().map(|item| item.is_active).unwrap_or(false);
         let version = parse_ffmpeg_semver(display_version.as_str());
@@ -351,12 +436,19 @@ async fn resolve_system_ffmpeg_item(
             is_active: cached_is_active,
         }));
     }
+    log::warn!("[FFMPEG:SYSTEM] probe failed");
 
     if cached.as_ref().map(is_valid_cached_ffmpeg).unwrap_or(false) {
+        log::warn!("[FFMPEG:SYSTEM] fallback to previous valid cache");
         return Ok(cached);
     }
 
-    let _ = crate::storage::ffmpeg_versions::clear_system_installation().await;
+    if cached.is_some() {
+        log::warn!("[FFMPEG:SYSTEM] clear invalid system ffmpeg cache");
+        let _ = crate::storage::ffmpeg_versions::clear_system_installation().await;
+    } else {
+        log::warn!("[FFMPEG:SYSTEM] probe failed and cache is empty");
+    }
     Ok(None)
 }
 
@@ -374,17 +466,14 @@ fn build_ffmpeg_probe_candidates(active_path: Option<&str>) -> Vec<String> {
     if cfg!(target_os = "windows") {
         #[cfg(target_os = "windows")]
         {
-            for dir in collect_windows_ffmpeg_dirs() {
-                push_ffmpeg_from_dir(&mut candidates, &dir);
-            }
-        }
-
-        if let Ok(exe_path) = std::env::current_exe() {
-            if let Some(exe_dir) = exe_path.parent() {
-                let local = exe_dir.join("ffmpeg.exe");
-                if local.exists() {
-                    push_candidate(&mut candidates, local.to_string_lossy().to_string());
+            for candidate in collect_windows_where_ffmpeg_candidates() {
+                push_candidate(&mut candidates, &candidate);
+                if let Ok(resolved) = fs::canonicalize(candidate.as_str()) {
+                    push_candidate(&mut candidates, resolved.to_string_lossy().to_string());
                 }
+            }
+            for candidate in collect_windows_winget_package_ffmpeg_candidates() {
+                push_candidate(&mut candidates, candidate);
             }
         }
         push_candidate(&mut candidates, "ffmpeg.exe");
@@ -411,15 +500,32 @@ fn build_ffmpeg_probe_candidates(active_path: Option<&str>) -> Vec<String> {
 
 fn probe_global_ffmpeg(active_path: Option<&str>) -> Option<(String, String)> {
     let candidates = build_ffmpeg_probe_candidates(active_path);
+    let path_value = std::env::var("PATH").unwrap_or_default();
+    log::info!(
+        "[FFMPEG:PROBE] start active_path={}, path_len={}, candidates={}",
+        active_path.unwrap_or(""),
+        path_value.len(),
+        summarize_probe_candidates(&candidates, 8)
+    );
     for bin in candidates {
-        let path = Path::new(bin.as_str());
-        if path.components().count() > 1 && !is_executable_file(path) {
-            continue;
+        #[cfg(not(target_os = "windows"))]
+        {
+            let path = Path::new(bin.as_str());
+            if path.components().count() > 1 && !is_executable_file(path) {
+                continue;
+            }
         }
         if let Some((version, executable_path)) = probe_ffmpeg_binary(bin.as_str()) {
+            log::info!(
+                "[FFMPEG:PROBE] hit candidate={} resolved={} version={}",
+                bin,
+                executable_path,
+                version
+            );
             return Some((version, executable_path));
         }
     }
+    log::warn!("[FFMPEG:PROBE] no usable ffmpeg candidate");
     None
 }
 

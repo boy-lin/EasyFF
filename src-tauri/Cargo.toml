@@ -54,3 +54,4 @@ cocoa = "0.26"
 
 [target."cfg(target_os = \"windows\")".dependencies]
 winreg = "0.52"
+encoding_rs = "0.8"

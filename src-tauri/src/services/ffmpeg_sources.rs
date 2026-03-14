@@ -162,24 +162,6 @@ pub fn fetch_versions(
             ),
             
         ],
-        (SourceKind::Gyan, HostOs::Windows) => vec![
-            version_item(
-                SourceKind::Gyan,
-                HostOs::Windows,
-                "latest",
-                "2025-11-20",
-                "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full.7z",
-                Some("x86_64"),
-            ),
-            version_item(
-                SourceKind::Gyan,
-                HostOs::Windows,
-                "7.1.1",
-                "2025-11-04",
-                "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-7.1.1-full_build.7z",
-                Some("x86_64"),
-            )
-        ],
         (SourceKind::Btbn, HostOs::Windows) => vec![
             version_item(
                 SourceKind::Btbn,
@@ -328,6 +310,25 @@ pub fn fetch_versions(
                 Some("x64"),
             ),
             
+        ],
+        
+        (SourceKind::Gyan, HostOs::Windows) => vec![
+            version_item(
+                SourceKind::Gyan,
+                HostOs::Windows,
+                "latest",
+                "2025-11-20",
+                "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full.7z",
+                Some("x86_64"),
+            ),
+            version_item(
+                SourceKind::Gyan,
+                HostOs::Windows,
+                "7.1.1",
+                "2025-11-04",
+                "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-7.1.1-full_build.7z",
+                Some("x86_64"),
+            )
         ],
         _ => Vec::new(),
     };
