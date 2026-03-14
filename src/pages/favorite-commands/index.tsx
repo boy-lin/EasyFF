@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-table";
 import { ArrowUpDown, Search, Sparkles, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { bridge, type FavoriteCommandItem } from "@/lib/bridge";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EllipsisName } from "@/components/ui-lab/ellipsis-name";
+import { AuthDialog } from "@/components/auth/AuthDialog";
 import { useFavoriteSyncStore } from "@/stores/favoriteSyncStore";
+import { hasDesktopAccessToken } from "@/lib/desktop-auth";
 
 const PAGE_SIZE = 5;
 const QUERY_DEBOUNCE_MS = 350;
@@ -65,6 +68,7 @@ function filterFavoriteCommands(list: FavoriteCommandItem[], keyword: string): F
 }
 
 export default function FavoriteCommandsPage() {
+  const { t } = useTranslation("ffmpeg");
   const navigate = useNavigate();
   const syncFavoriteNow = useFavoriteSyncStore((s) => s.syncNow);
   const scheduleFavoriteSync = useFavoriteSyncStore((s) => s.scheduleSync);
@@ -82,6 +86,7 @@ export default function FavoriteCommandsPage() {
   const [hasNextPage, setHasNextPage] = useState(false);
   const [total, setTotal] = useState(0);
   const [reloadKey, setReloadKey] = useState(0);
+  const [authDialogOpen, setAuthDialogOpen] = useState(false);
 
   const requestSeqRef = useRef(0);
 
@@ -116,7 +121,7 @@ export default function FavoriteCommandsPage() {
       setTotal(offset + pageRows.length + (rows.length > PAGE_SIZE ? 1 : 0));
     } catch (error) {
       if (requestSeqRef.current !== seq) return;
-      const message = error instanceof Error ? error.message : "Load favorite commands failed";
+      const message = error instanceof Error ? error.message : t("favoriteCommandsPage.toast.load_failed");
       toast.error(message);
     } finally {
       if (requestSeqRef.current === seq) {
@@ -163,7 +168,7 @@ export default function FavoriteCommandsPage() {
       try {
         await bridge.deleteFavoriteCommand(id);
         scheduleFavoriteSync();
-        toast.success("Deleted");
+        toast.success(t("favoriteCommandsPage.toast.deleted"));
 
         if (items.length <= 1 && page > 0) {
           setPage((prev) => Math.max(0, prev - 1));
@@ -171,18 +176,18 @@ export default function FavoriteCommandsPage() {
         }
         setReloadKey((prev) => prev + 1);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Delete failed";
+        const message = error instanceof Error ? error.message : t("favoriteCommandsPage.toast.delete_failed");
         toast.error(message);
       }
     },
-    [items.length, page, scheduleFavoriteSync],
+    [items.length, page, scheduleFavoriteSync, t],
   );
 
   const handleStartCreate = useCallback(
     (value: string) => {
       const text = value.trim();
       if (!text) {
-        toast.warning("Command is empty");
+        toast.warning(t("favoriteCommandsPage.toast.command_empty"));
         return;
       }
       navigate({
@@ -190,21 +195,31 @@ export default function FavoriteCommandsPage() {
         search: `?commandText=${encodeURIComponent(text)}`,
       });
     },
-    [navigate],
+    [navigate, t],
   );
 
 
-  const handleManualSync = useCallback(async () => {
+  const runManualSync = useCallback(async () => {
     try {
       const result = await syncFavoriteNow();
       if (!result) return;
       setReloadKey((prev) => prev + 1);
-      toast.success(`Synced (push ${result.pushed}, pull ${result.pulled})`);
+      toast.success(
+        t("favoriteCommandsPage.toast.synced", { pushed: result.pushed, pulled: result.pulled }),
+      );
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Sync failed";
+      const message = error instanceof Error ? error.message : t("favoriteCommandsPage.toast.sync_failed");
       toast.error(message);
     }
-  }, [syncFavoriteNow]);
+  }, [syncFavoriteNow, t]);
+
+  const handleManualSync = useCallback(async () => {
+    if (!hasDesktopAccessToken()) {
+      setAuthDialogOpen(true);
+      return;
+    }
+    await runManualSync();
+  }, [runManualSync]);
 
   const columns = useMemo<ColumnDef<FavoriteCommandItem>[]>(
     () => [
@@ -222,23 +237,25 @@ export default function FavoriteCommandsPage() {
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
             className="h-auto p-0 hover:bg-transparent"
           >
-            Title
+            {t("favoriteCommandsPage.table.title")}
             <ArrowUpDown className="ml-2 h-4 w-4" />
           </Button>
         ),
-        cell: ({ row }) => <span className="font-medium">{row.original.title}</span>,
+        cell: ({ row }) => <span className="font-medium"><EllipsisName name={row.original.title} /></span>,
       },
       {
         accessorKey: "description",
-        header: "Description",
+        header: t("favoriteCommandsPage.table.description"),
         cell: ({ row }) => (
-          <span className="line-clamp-2 text-sm text-muted-foreground">{row.original.description || "-"}</span>
+          <span className="line-clamp-2 text-sm text-muted-foreground">
+            {row.original.description ? <EllipsisName name={row.original.description} /> : "-"}
+          </span>
         ),
         enableSorting: false,
       },
       {
         accessorKey: "command",
-        header: "Command",
+        header: t("favoriteCommandsPage.table.command"),
         cell: ({ row }) => (
             <EllipsisName name={row.original.command} startCount={20} />
         ),
@@ -253,7 +270,7 @@ export default function FavoriteCommandsPage() {
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
             className="h-auto p-0 hover:bg-transparent"
           >
-            Updated At
+            {t("favoriteCommandsPage.table.updated_at")}
             <ArrowUpDown className="ml-2 h-4 w-4" />
           </Button>
         ),
@@ -261,18 +278,18 @@ export default function FavoriteCommandsPage() {
       },
       {
         id: "actions",
-        header: "Actions",
+        header: t("favoriteCommandsPage.table.actions"),
         cell: ({ row }) => {
           const item = row.original;
           return (
             <div className="flex flex-wrap items-center gap-2">
               <Button className="" size="sm" onClick={() => handleStartCreate(item.command)}>
                 <Sparkles className="mr-1 h-4 w-4" />
-                Use
+                {t("favoriteCommandsPage.actions.use")}
               </Button>
               <Button size="sm" variant="destructive" onClick={() => handleDelete(item.id)}>
                 <Trash2 className="mr-1 h-4 w-4" />
-                Delete
+                {t("favoriteCommandsPage.actions.delete")}
               </Button>
             </div>
           );
@@ -280,7 +297,7 @@ export default function FavoriteCommandsPage() {
         enableSorting: false,
       },
     ],
-    [handleDelete, handleStartCreate, page],
+    [handleDelete, handleStartCreate, page, t],
   );
 
   const table = useReactTable({
@@ -292,21 +309,22 @@ export default function FavoriteCommandsPage() {
   });
 
   return (
+    <>
       <Card className="h-full w-full  p-0 gap-2 border-none bg-transparent shadow-none">
         <CardHeader className="rounded-none px-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <CardTitle>Favorite Commands</CardTitle>
+              <CardTitle>{t("favoriteCommandsPage.title")}</CardTitle>
               <CardDescription className="opacity-0"></CardDescription>
             </div>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={handleManualSync} disabled={syncing}>
-                {syncing ? "Syncing..." : "Sync now"}
+                {syncing ? t("favoriteCommandsPage.actions.syncing") : t("favoriteCommandsPage.actions.sync_now")}
               </Button>
               <div className="relative w-72">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder="Search title/description/command"
+                  placeholder={t("favoriteCommandsPage.search.placeholder")}
                   className="pl-9"
                   value={queryInput}
                   onChange={(e) => setQueryInput(e.target.value)}
@@ -315,8 +333,10 @@ export default function FavoriteCommandsPage() {
             </div>
           </div>
           <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
-            <span>{syncing ? "Syncing favorites..." : "Sync idle"}</span>
-            {lastSyncAt ? <span>Last sync: {new Date(lastSyncAt).toLocaleString()}</span> : null}
+            <span>{syncing ? t("favoriteCommandsPage.sync.syncing_favorites") : t("favoriteCommandsPage.sync.idle")}</span>
+            {lastSyncAt ? (
+              <span>{t("favoriteCommandsPage.sync.last_sync", { time: new Date(lastSyncAt).toLocaleString() })}</span>
+            ) : null}
             {syncError ? (
               <button
                 type="button"
@@ -324,7 +344,7 @@ export default function FavoriteCommandsPage() {
                 onClick={clearSyncError}
                 title={syncError}
               >
-                Sync error (click to dismiss)
+                {t("favoriteCommandsPage.sync.error_click_dismiss")}
               </button>
             ) : null}
           </div>
@@ -384,7 +404,7 @@ export default function FavoriteCommandsPage() {
               {!loading && items.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
-                    No data
+                    {t("favoriteCommandsPage.table.no_data")}
                   </TableCell>
                 </TableRow>
               )}
@@ -393,7 +413,9 @@ export default function FavoriteCommandsPage() {
 
           <div className="flex items-center justify-end space-x-2 py-4 pr-2">
             <span className="mr-2 text-sm text-muted-foreground">
-              Page {page + 1} {keyword ? `| Matched ${total}` : ""}
+              {keyword
+                ? t("favoriteCommandsPage.pagination.page_with_matched", { page: page + 1, total })
+                : t("favoriteCommandsPage.pagination.page", { page: page + 1 })}
             </span>
             <Button
               variant="outline"
@@ -401,7 +423,7 @@ export default function FavoriteCommandsPage() {
               onClick={() => setPage((prev) => Math.max(0, prev - 1))}
               disabled={page === 0 || loading}
             >
-              Prev
+              {t("favoriteCommandsPage.actions.prev")}
             </Button>
             <Button
               variant="outline"
@@ -409,12 +431,22 @@ export default function FavoriteCommandsPage() {
               onClick={() => setPage((prev) => prev + 1)}
               disabled={!hasNextPage || loading}
             >
-              Next
+              {t("favoriteCommandsPage.actions.next")}
             </Button>
           </div>
         </CardContent>
       </Card>
+      <AuthDialog
+        open={authDialogOpen}
+        onOpenChange={setAuthDialogOpen}
+        onSuccess={() => {
+          setAuthDialogOpen(false);
+          runManualSync().catch(() => undefined);
+        }}
+      />
+    </>
   );
 }
+
 
 

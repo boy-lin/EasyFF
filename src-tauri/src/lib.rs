@@ -167,47 +167,11 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
-            crate::commands::get_media_info,
             crate::commands::cli_task_submit,
             crate::commands::media_task_has_running_by_type,
             crate::commands::media_task_clear_by_type,
             crate::commands::media_task_clear_by_type_with_stop,
             crate::commands::media_task_cancel_task,
-            crate::commands::run_self_check,
-            crate::commands::video_player_open,
-            crate::commands::video_player_play,
-            crate::commands::video_player_pause,
-            crate::commands::video_player_seek,
-            crate::commands::video_player_get_position,
-            crate::commands::video_player_get_duration,
-            crate::commands::video_player_get_size,
-            crate::commands::video_player_close,
-            crate::commands::video_player_set_volume,
-            crate::commands::prepare_video_for_web_playback,
-            crate::commands::video_mse_stream_open,
-            crate::commands::video_mse_stream_close,
-            crate::commands::audio_player_open,
-            crate::commands::audio_player_play,
-            crate::commands::audio_player_pause,
-            crate::commands::audio_player_seek,
-            crate::commands::audio_player_stop,
-            crate::commands::audio_player_set_volume,
-            crate::commands::audio_player_get_position,
-            crate::commands::audio_player_get_duration,
-            crate::commands::get_audio_file_info,
-            crate::commands::convert_audio_file,
-            crate::commands::get_detailed_media_info,
-            crate::commands::get_detailed_media_info_batch,
-            crate::commands::get_detailed_image_info,
-            crate::commands::probe_media_info,
-            crate::commands::probe_media_info_batch,
-            crate::commands::check_hardware_acceleration,
-            crate::commands::convert_gif_file,
-            crate::commands::generate_media_thumbnail,
-            crate::commands::compress_video_file,
-            crate::commands::compress_audio_file,
-            crate::commands::compress_image_file,
-            crate::commands::write_media_metadata,
             crate::commands::get_device_id,
             crate::commands::auth_exchange_code,
             crate::commands::updater_guard_report_success,
@@ -272,9 +236,6 @@ pub fn run() {
                     }
                 }
             });
-            app.manage(std::sync::Mutex::new(
-                None::<crate::commands::VideoMseStreamSession>,
-            ));
             log::info!("Tauri application setup completed");
             Ok(())
         })

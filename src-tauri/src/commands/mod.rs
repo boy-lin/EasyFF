@@ -1,13 +1,16 @@
 ﻿use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::fs::{self, File};
-use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::collections::HashSet;
+use std::fs;
+use std::fs::File;
+use std::io::{self, Read, Write};
+use std::path::Path;
+use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{LazyLock, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::command;
-use tauri::ipc::JavaScriptChannelId;
-use tauri::{AppHandle, Emitter, State};
+use tauri::AppHandle;
+use tauri::{Emitter, Manager};
 
 fn detect_host_os() -> String {
     if cfg!(target_os = "windows") {
@@ -17,6 +20,16 @@ fn detect_host_os() -> String {
     } else {
         "linux".to_string()
     }
+}
+
+async fn run_blocking<T, F>(ctx: &'static str, job: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(job)
+        .await
+        .map_err(|e| format!("[JOIN:{}] {}", ctx, e))?
 }
 
 fn parse_ffmpeg_semver(version_line: &str) -> String {
@@ -121,82 +134,10 @@ pub struct MediaProbeResult {
 
 pub type MediaTaskRequest = crate::task::queue::MediaTaskRequest;
 
-#[derive(Debug, Deserialize, Serialize, Clone, Default)]
-pub struct PreviewSize {
-    pub width: u32,
-    pub height: u32,
-}
-
-pub type PlayerState = Mutex<Option<()>>;
-pub type AudioPlayerState = Mutex<Option<()>>;
-pub type VideoMseStreamState = Mutex<Option<VideoMseStreamSession>>;
-
-#[derive(Debug, Clone, Default)]
-pub struct VideoMseStreamSession;
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct FileInfo {
-    pub path: String,
-    pub size: u64,
-    pub format: String,
-    pub format_long_name: Option<String>,
-    pub codec: String,
-    pub codec_long_name: Option<String>,
-    pub resolution: String,
-    pub width: u64,
-    pub height: u64,
-    pub duration: f64,
-    pub output_dir: String,
-    pub bitrate: Option<String>,
-    pub fps: Option<String>,
-    pub avg_frame_rate: Option<String>,
-    pub nb_frames: Option<u64>,
-    pub pix_fmt: Option<String>,
-    pub color_space: Option<String>,
-    pub color_range: Option<String>,
-    pub audio_codec: Option<String>,
-    pub audio_codec_long_name: Option<String>,
-    pub audio_channels: Option<String>,
-    pub audio_channel_layout: Option<String>,
-    pub audio_sample_rate: Option<String>,
-    pub audio_bitrate: Option<String>,
-    pub audio_bits_per_sample: Option<String>,
-    pub audio_sample_fmt: Option<String>,
-    pub format_bitrate: Option<String>,
-    pub format_tags: Option<serde_json::Value>,
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone, Default)]
-pub struct TranscodeArgs {
-    pub input: String,
-    pub output: String,
-    pub resolution: Option<String>,
-    pub quality: Option<String>,
-    pub format: String,
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct SelfCheckResult {
     pub fs_permission: bool,
     pub fs_error: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct ModuleInfo {
-    pub id: Option<String>,
-    pub name: Option<String>,
-    pub ffmpeg_path: Option<String>,
-    pub ffprobe_path: Option<String>,
-    pub version: Option<String>,
-    pub source: Option<String>,
-    pub is_active: bool,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct HardwareSupport {
-    pub h264_hardware: bool,
-    pub hevc_hardware: bool,
-    pub prores_hardware: bool,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -218,179 +159,6 @@ pub struct AuthTokenResponse {
     pub id_token: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct WebPlaybackPrepareResult {
-    pub play_path: String,
-    pub prepared: bool,
-    pub reason: String,
-}
-
-#[derive(Deserialize, Serialize, Clone, Debug, Default)]
-pub struct AudioConversionArgs {
-    pub task_id: String,
-    pub input_path: String,
-    pub input_file_type: Option<String>,
-    pub output_path: Option<String>,
-    pub format: String,
-    pub audio_tracks: Option<Vec<serde_json::Value>>,
-    pub codec: Option<String>,
-    pub bitrate: Option<f32>,
-    pub sample_rate: Option<u32>,
-    pub channels: Option<u32>,
-    pub bit_depth: Option<u32>,
-    pub quality: Option<u32>,
-    pub use_hardware_acceleration: Option<bool>,
-    pub use_ultra_fast_speed: Option<bool>,
-}
-
-#[derive(Deserialize, Serialize, Clone, Debug, Default)]
-pub struct DenoiseMediaArgs {
-    pub task_id: String,
-    pub input_path: String,
-    pub input_file_type: Option<String>,
-    pub output_path: Option<String>,
-    pub format: Option<String>,
-    pub engine: Option<String>,
-    pub filter: Option<serde_json::Value>,
-    pub use_hardware_acceleration: Option<bool>,
-    pub use_ultra_fast_speed: Option<bool>,
-}
-
-#[derive(Deserialize, Serialize, Clone, Debug, Default)]
-pub struct VideoConversionArgs {
-    pub task_id: String,
-    pub input_path: String,
-    pub input_file_type: Option<String>,
-    pub output_path: Option<String>,
-    pub format: Option<String>,
-    pub video_encoder: Option<String>,
-    pub video_bitrate: Option<u32>,
-    pub min_bitrate: Option<u32>,
-    pub max_bitrate: Option<u32>,
-    pub rc_mode: Option<String>,
-    pub crf: Option<u32>,
-    pub resolution: Option<String>,
-    pub aspect_ratio: Option<String>,
-    pub scaling_mode: Option<String>,
-    pub frame_rate: Option<String>,
-    pub gop_size: Option<u32>,
-    pub preset: Option<String>,
-    pub profile: Option<String>,
-    pub tune: Option<String>,
-    pub color_space: Option<String>,
-    pub color_range: Option<String>,
-    pub bit_depth: Option<u32>,
-    pub crop: Option<String>,
-    pub audio_encoder: Option<String>,
-    pub audio_bitrate: Option<u32>,
-    pub audio_sample_rate: Option<u32>,
-    pub audio_channels: Option<u32>,
-    pub audio_bit_depth: Option<u32>,
-    pub audio_quality: Option<u32>,
-    pub audio_tracks: Option<Vec<serde_json::Value>>,
-    pub default_audio_params: Option<serde_json::Value>,
-    pub use_hardware_acceleration: Option<bool>,
-    pub use_ultra_fast_speed: Option<bool>,
-    pub watermark: Option<serde_json::Value>,
-}
-
-#[derive(Deserialize, Serialize, Clone, Debug, Default)]
-pub struct GifConversionArgs {
-    pub task_id: String,
-    pub input_path: String,
-    pub input_file_type: Option<String>,
-    #[serde(default)]
-    pub output_path: Option<String>,
-    pub format: String,
-    #[serde(default)]
-    pub width: Option<u32>,
-    #[serde(default)]
-    pub height: Option<u32>,
-    #[serde(default)]
-    pub frame_rate: Option<f32>,
-    #[serde(default)]
-    pub quality: Option<u32>,
-    #[serde(default)]
-    pub preserve_transparency: Option<bool>,
-    #[serde(default)]
-    pub color_mode: Option<String>,
-    #[serde(default)]
-    pub dpi: Option<f64>,
-    #[serde(default)]
-    pub loop_count: Option<i32>,
-    #[serde(default)]
-    pub frame_delay: Option<u32>,
-    #[serde(default)]
-    pub colors: Option<u32>,
-    #[serde(default)]
-    pub preserve_extensions: Option<bool>,
-    #[serde(default)]
-    pub sharpen: Option<bool>,
-    #[serde(default)]
-    pub denoise: Option<bool>,
-}
-
-#[derive(Deserialize, Serialize, Clone, Debug, Default)]
-pub struct VideoCompressionArgs {
-    pub task_id: String,
-    pub input_path: String,
-    pub input_file_type: Option<String>,
-    pub output_path: String,
-    pub compression_ratio: Option<u32>,
-    pub width: Option<u32>,
-    pub height: Option<u32>,
-    pub bitrate: Option<u32>,
-    pub frame_rate: Option<f32>,
-    pub codec: Option<String>,
-    pub keyframe_interval: Option<u32>,
-    pub color_depth: Option<u32>,
-    pub aspect_ratio: Option<String>,
-    pub remove_audio: Option<bool>,
-    pub audio_tracks: Option<Vec<serde_json::Value>>,
-    pub preset: Option<String>,
-    pub use_hardware_acceleration: Option<bool>,
-    pub use_ultra_fast_speed: Option<bool>,
-}
-
-#[derive(Deserialize, Serialize, Clone, Debug, Default)]
-pub struct AudioCompressionArgs {
-    pub task_id: String,
-    pub input_path: String,
-    pub input_file_type: Option<String>,
-    pub output_path: String,
-    #[serde(flatten)]
-    pub encoding: HashMap<String, serde_json::Value>,
-    pub format: Option<String>,
-    pub remove_silence: Option<bool>,
-    pub silence_threshold: Option<f32>,
-    pub volume_gain: Option<f32>,
-}
-
-#[derive(Deserialize, Serialize, Clone, Debug, Default)]
-pub struct ImageCompressionArgs {
-    pub task_id: String,
-    pub input_path: String,
-    pub input_file_type: Option<String>,
-    pub output_path: String,
-    pub quality: Option<u32>,
-    pub format: Option<String>,
-    pub width: Option<u32>,
-    pub height: Option<u32>,
-    pub color_mode: Option<String>,
-    pub strip_metadata: Option<bool>,
-    pub keep_transparency: Option<bool>,
-    pub dpi: Option<f64>,
-    pub crop_whitespace: Option<bool>,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone, Default)]
-pub struct WriteMetadataArgs {
-    pub input_path: String,
-    pub output_path: String,
-    pub metadata: HashMap<String, String>,
-}
-
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct UpdaterGuardStatus {
     pub status: Option<String>,
@@ -401,41 +169,98 @@ pub struct TaskHistoryItem {
     pub id: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, Default)]
-pub struct MyFileItem {
-    pub id: Option<String>,
+
+fn collect_files_recursive(root: &Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
+    if !root.exists() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(root)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files_recursive(&path, out)?;
+        } else if path.is_file() {
+            out.push(path);
+        }
+    }
+    Ok(())
 }
 
 #[command]
-pub async fn report_client_log(_log: ClientLogInput) -> Result<(), String> {
-    Err("command disabled".to_string())
+pub async fn report_client_log(log: ClientLogInput) -> Result<(), String> {
+    let level = log.level.to_lowercase();
+    let prefix = format!("[CLIENT:{}] {}", log.category, log.message);
+    let detail = format!(
+        "{} | url={} | ts={} | stack={} | meta={}",
+        prefix,
+        log.url.unwrap_or_default(),
+        log.timestamp.unwrap_or_default(),
+        log.stack.unwrap_or_default(),
+        log.meta.map(|m| m.to_string()).unwrap_or_default()
+    );
+    match level.as_str() {
+        "warn" => log::warn!("{}", detail),
+        "info" => log::info!("{}", detail),
+        _ => log::error!("{}", detail),
+    }
+    Ok(())
 }
+
 #[command]
-pub async fn export_logs_archive(_app: AppHandle) -> Result<String, String> {
-    Err("command disabled".to_string())
+pub async fn export_logs_archive(app: AppHandle) -> Result<String, String> {
+    run_blocking("export_logs_archive", move || {
+        let log_dir = app
+            .path()
+            .app_log_dir()
+            .map_err(|e| format!("resolve app_log_dir failed: {}", e))?;
+        fs::create_dir_all(&log_dir)
+            .map_err(|e| format!("create app_log_dir failed: {}", e))?;
+
+        let mut files = Vec::new();
+        collect_files_recursive(&log_dir, &mut files)
+            .map_err(|e| format!("collect logs failed: {}", e))?;
+        if files.is_empty() {
+            return Err("no log files found".to_string());
+        }
+
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or_default();
+        let zip_path = std::env::temp_dir().join(format!("viko-logs-{}.zip", ts));
+        let file = File::create(&zip_path)
+            .map_err(|e| format!("create zip failed: {}", e))?;
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::FileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+
+        for src in files {
+            let rel = src
+                .strip_prefix(&log_dir)
+                .ok()
+                .and_then(|p| p.to_str())
+                .map(|s| s.replace('\\', "/"))
+                .unwrap_or_else(|| {
+                    src.file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("log.txt")
+                        .to_string()
+                });
+            zip.start_file(rel, options)
+                .map_err(|e| format!("zip start_file failed: {}", e))?;
+            let mut input = File::open(&src)
+                .map_err(|e| format!("open log file failed ({}): {}", src.display(), e))?;
+            std::io::copy(&mut input, &mut zip)
+                .map_err(|e| format!("zip write failed ({}): {}", src.display(), e))?;
+        }
+        zip.finish()
+            .map_err(|e| format!("zip finish failed: {}", e))?;
+
+        Ok(zip_path.to_string_lossy().to_string())
+    })
+    .await
 }
-#[command]
-pub async fn get_detailed_media_info(_path: String) -> Result<MediaDetails, String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn get_detailed_image_info(_path: String) -> Result<MediaDetails, String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn get_detailed_media_info_batch(
-    _paths: Vec<String>,
-) -> Result<Vec<MediaDetails>, String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn probe_media_info(_path: String) -> Result<MediaProbeResult, String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn probe_media_info_batch(_paths: Vec<String>) -> Result<Vec<MediaProbeResult>, String> {
-    Err("command disabled".to_string())
-}
+
 #[command]
 pub async fn cli_task_submit(
     app: AppHandle,
@@ -462,10 +287,6 @@ pub async fn media_task_clear_by_type_with_stop(
 #[command]
 pub async fn media_task_cancel_task(id: String) -> Result<(), String> {
     crate::task::queue::cancel_task(id).await
-}
-#[command]
-pub async fn run_self_check() -> Result<SelfCheckResult, String> {
-    Err("command disabled".to_string())
 }
 #[command]
 pub async fn get_device_id() -> Result<String, String> {
@@ -554,205 +375,44 @@ pub async fn auth_exchange_code(input: AuthExchangeCodeInput) -> Result<AuthToke
         value
     ))
 }
+
+
 #[command]
-pub async fn updater_guard_report_success() -> Result<UpdaterGuardStatus, String> {
-    Err("command disabled".to_string())
+pub async fn updater_guard_report_success() -> Result<crate::storage::updater_guard::UpdaterGuardStatus, String> {
+    crate::storage::updater_guard::record_success()
+        .await
+        .map_err(|e| e.to_string())?;
+    crate::storage::updater_guard::get_status()
+        .await
+        .map_err(|e| e.to_string())
 }
+
 #[command]
 pub async fn updater_guard_report_failure(
-    _reason: Option<String>,
-) -> Result<UpdaterGuardStatus, String> {
-    Err("command disabled".to_string())
+    reason: Option<String>,
+) -> Result<crate::storage::updater_guard::UpdaterGuardStatus, String> {
+    crate::storage::updater_guard::record_failure(reason)
+        .await
+        .map_err(|e| e.to_string())?;
+    crate::storage::updater_guard::get_status()
+        .await
+        .map_err(|e| e.to_string())
 }
+
 #[command]
-pub async fn updater_guard_get_status() -> Result<UpdaterGuardStatus, String> {
-    Err("command disabled".to_string())
+pub async fn updater_guard_get_status() -> Result<crate::storage::updater_guard::UpdaterGuardStatus, String> {
+    crate::storage::updater_guard::get_status()
+        .await
+        .map_err(|e| e.to_string())
 }
+
 #[command]
 pub async fn updater_guard_reset() -> Result<(), String> {
-    Err("command disabled".to_string())
+    crate::storage::updater_guard::reset_failures()
+        .await
+        .map_err(|e| e.to_string())
 }
-#[command]
-pub async fn check_hardware_acceleration() -> Result<HardwareSupport, String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn get_media_info(_path: String) -> Result<FileInfo, String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn prepare_video_for_web_playback(
-    _path: String,
-) -> Result<WebPlaybackPrepareResult, String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn video_mse_stream_open(
-    _app: AppHandle,
-    _path: String,
-    _chunk_channel: JavaScriptChannelId,
-    _stream_state: State<'_, VideoMseStreamState>,
-) -> Result<(), String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn video_mse_stream_close(
-    _stream_state: State<'_, VideoMseStreamState>,
-) -> Result<(), String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn video_player_open(
-    _app: AppHandle,
-    _path: String,
-    _preview: Option<PreviewSize>,
-    _frame_channel: Option<JavaScriptChannelId>,
-    _player_state: State<'_, PlayerState>,
-) -> Result<(), String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn video_player_play(_player_state: State<'_, PlayerState>) -> Result<(), String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn video_player_get_size(
-    _player_state: State<'_, PlayerState>,
-) -> Result<(u32, u32), String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn video_player_pause(_player_state: State<'_, PlayerState>) -> Result<(), String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn video_player_seek(
-    _position: f64,
-    _player_state: State<'_, PlayerState>,
-) -> Result<(), String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn video_player_get_position(
-    _player_state: State<'_, PlayerState>,
-) -> Result<f64, String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn video_player_get_duration(
-    _player_state: State<'_, PlayerState>,
-) -> Result<f64, String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn video_player_close(_player_state: State<'_, PlayerState>) -> Result<(), String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn video_player_set_volume(
-    _volume: f32,
-    _player_state: State<'_, PlayerState>,
-) -> Result<(), String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn audio_player_open(
-    _app: AppHandle,
-    _path: String,
-    _audio_player_state: State<'_, AudioPlayerState>,
-) -> Result<String, String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn audio_player_play(
-    _audio_player_state: State<'_, AudioPlayerState>,
-) -> Result<(), String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn audio_player_pause(
-    _audio_player_state: State<'_, AudioPlayerState>,
-) -> Result<(), String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn audio_player_seek(
-    _position: f64,
-    _audio_player_state: State<'_, AudioPlayerState>,
-) -> Result<(), String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn audio_player_stop(
-    _audio_player_state: State<'_, AudioPlayerState>,
-) -> Result<(), String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn audio_player_set_volume(
-    _volume: f32,
-    _audio_player_state: State<'_, AudioPlayerState>,
-) -> Result<(), String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn audio_player_get_position(
-    _audio_player_state: State<'_, AudioPlayerState>,
-) -> Result<f64, String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn audio_player_get_duration(
-    _audio_player_state: State<'_, AudioPlayerState>,
-) -> Result<f64, String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn get_audio_file_info(_path: String) -> Result<serde_json::Value, String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn convert_audio_file(_app: AppHandle, _args: AudioConversionArgs) -> Result<(), String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn convert_gif_file(_app: AppHandle, _args: GifConversionArgs) -> Result<(), String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn generate_media_thumbnail(
-    _window: tauri::Window,
-    _request_id: String,
-    _path: String,
-    _options: Option<serde_json::Value>,
-) -> Result<(), String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn compress_video_file(
-    _app: AppHandle,
-    _args: VideoCompressionArgs,
-) -> Result<(), String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn compress_audio_file(
-    _app: AppHandle,
-    _args: AudioCompressionArgs,
-) -> Result<(), String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn compress_image_file(
-    _app: AppHandle,
-    _args: ImageCompressionArgs,
-) -> Result<(), String> {
-    Err("command disabled".to_string())
-}
-#[command]
-pub async fn write_media_metadata(_args: WriteMetadataArgs) -> Result<(), String> {
-    Err("command disabled".to_string())
-}
+
 #[command]
 pub async fn get_task_history(
     limit: Option<u32>,
@@ -985,22 +645,12 @@ fn extract_gz(archive_path: &Path, target_dir: &Path) -> Result<(), String> {
 }
 
 fn extract_7z_with_system(archive_path: &Path, target_dir: &Path) -> Result<(), String> {
-    let output_arg = format!("-o{}", target_dir.to_string_lossy());
-    for bin in ["7z", "7za"] {
-        let output = Command::new(bin)
-            .args([
-                "x",
-                "-y",
-                output_arg.as_str(),
-                archive_path.to_string_lossy().as_ref(),
-            ])
-            .output();
-        let Ok(out) = output else { continue };
-        if out.status.success() {
-            return Ok(());
-        }
-    }
-    Err("7z extraction failed. please install 7-Zip or choose a zip/tar.xz source".to_string())
+    sevenz_rust::decompress_file(archive_path, target_dir).map_err(|e| {
+        format!(
+            "7z extraction failed: {}. try a zip/tar.xz source",
+            e
+        )
+    })
 }
 
 fn find_ffmpeg_binary(root: &Path) -> Option<PathBuf> {
@@ -1504,3 +1154,5 @@ pub async fn set_favorite_command_sync_cursor(
         .await
         .map_err(|e| e.to_string())
 }
+
+

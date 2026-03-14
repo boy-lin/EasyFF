@@ -47,7 +47,7 @@
   "errors": {
     "fetch_remote": "Failed to fetch remote task history",
     "fetch_local": "Failed to fetch local task history",
-    "task_not_finished": "Task is still running",
+    "task_not_finished": "Task is not finished successfully",
     "output_missing": "Output path not found",
     "open_folder": "Failed to open folder"
   }

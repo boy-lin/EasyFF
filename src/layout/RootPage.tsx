@@ -1,30 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { Outlet } from "react-router-dom";
-import { bridge } from "@/lib/bridge";
 import Sidebar from "./sidebar/Sidebar";
 import Header from "./Header";
 
 const Layout: React.FC = () => {
-  const [, setChecksPassed] = useState(false);
-
-  useEffect(() => {
-    if (!bridge.isTauriEvn()) {
-      setChecksPassed(true);
-      return;
-    }
-
-    const check = async () => {
-      try {
-        const res = await bridge.runSelfCheck();
-        console.log("run_self_check res", res);
-      } catch (err) {
-        console.error("self check failed", err);
-        setChecksPassed(false);
-      }
-    };
-    check();
-  }, []);
-
   return (
     <div
       className="flex h-screen bg-sidebar text-foreground overscroll-none"
@@ -34,7 +13,7 @@ const Layout: React.FC = () => {
       }}
     >
       <Sidebar />
-      <main className="flex-1 flex flex-col overflow-hidden rounded-l-lg bg-background">
+      <main className="flex-1 flex flex-col overflow-hidden rounded-l-lg bg-card">
         <Header />
         <div
           className="flex-1 overflow-y-auto py-2"

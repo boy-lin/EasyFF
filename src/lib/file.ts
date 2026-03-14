@@ -1,4 +1,4 @@
-import { isAudioFormat, isImageFormat, isVideoFormat } from "@/data/formats";
+import { isAudioFormat, isImageFormat, isVideoFormat } from "@/constants/formats";
 import { FileType } from "@/types/tasks";
 import { readDir, stat } from "@tauri-apps/plugin-fs";
 

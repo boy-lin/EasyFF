@@ -162,7 +162,7 @@ export default function TaskHistoryPage() {
       {
         accessorKey: "task_type",
         header: t("table.task_type"),
-        cell: ({ row }) => t(`task_type.${row.original.task_type}`, row.original.task_type),
+        cell: ({ row }) => row.original.task_type,
       },
       {
         accessorKey: "status",
@@ -171,7 +171,7 @@ export default function TaskHistoryPage() {
           const statusText = t(`status.${row.original.status}`, row.original.status);
           const statusClass = STATUS_CLASSNAME[row.original.status] || "text-muted-foreground";
           const isError = row.original.status === "error";
-          const errorMessage = row.original.error_message?.trim() || t("errors.unknown", "Unknown error");
+          const errorMessage = row.original.error_message?.trim() || "Unknown error";
           return (
             <div className="inline-flex items-center gap-1.5">
               <span className={statusClass}>{statusText}</span>

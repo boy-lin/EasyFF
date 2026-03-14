@@ -38,7 +38,7 @@ export default function Header() {
   };
 
   return (
-    <header className="bg-background px-4 py-2 flex items-center justify-between gap-3">
+    <header className="px-4 py-2 flex items-center justify-between gap-3">
       <div>
         {showBackButton ? (
           <Button size="sm" variant="ghost" onClick={handleBack} className="h-8 px-2">

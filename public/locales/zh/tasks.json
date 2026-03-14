@@ -15,19 +15,6 @@
     "actions": "操作",
     "started_at": "开始时间"
   },
-  "task_type": {
-    "convert": "转码",
-    "compress": "压缩",
-    "convert-video": "视频转码",
-    "convert-audio": "音频转码",
-    "convert-image": "图片转码",
-    "convert-gif": "GIF 转换",
-    "compress-video": "视频压缩",
-    "compress-audio": "音频压缩",
-    "compress-image": "图片压缩",
-    "watermark": "添加水印",
-    "metadata": "元数据"
-  },
   "status": {
     "finished": "已完成",
     "processing": "处理中",
@@ -47,7 +34,7 @@
   "errors": {
     "fetch_remote": "获取云端任务历史失败",
     "fetch_local": "获取本地任务历史失败",
-    "task_not_finished": "任务正在进行中",
+    "task_not_finished": "任务没有成功完成",
     "output_missing": "输出路径不存在",
     "open_folder": "打开文件目录失败"
   }

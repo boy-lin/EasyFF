@@ -5,7 +5,7 @@ import {
   isAudioFormat,
   isImageFormat,
   isVideoFormat,
-} from "@/data/formats";
+} from "@/constants/formats";
 import { useDragDrop } from "@/lib/drag";
 import { bridge } from "@/lib/bridge";
 import { open } from "@tauri-apps/plugin-dialog";

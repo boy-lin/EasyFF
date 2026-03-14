@@ -72,8 +72,14 @@ export default function OnlineHelpDialog() {
                   xiaoyaosha@gmail.com
                 </a>
               </div>
-              <div>Telegram: @HollyWWH</div>
-              <div>小红书账号/昵称: 5729257995/赛亚人86</div>
+              <div>
+                Telegram: 
+                <a href="https://t.me/HollyWWH" target="_blank" rel="noreferrer">https://t.me/HollyWWH</a>
+              </div>
+              <div>
+                小红书: 
+                <a href="https://xhslink.com/m/A9hmfzL68i1" target="_blank" rel="noreferrer">https://xhslink.com/m/A9hmfzL68i1</a>
+              </div>
             </div>
 
             <Button

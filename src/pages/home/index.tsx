@@ -47,7 +47,7 @@ export default function Home() {
   );
   const [inputPaths, setInputPaths] = useState<string[]>([]);
   const [resolvedOutputPath, setResolvedOutputPath] = useState<string>("");
-  const { status, className: statusClassName, setStatus } = useUiStatus();
+  const { status, setStatus, className: statusClassName } = useUiStatus();
   const { execute, running, taskLogs, lastTaskCompleted } = useCliTaskRunner(setStatus);
   const [favoriteCommands, setFavoriteCommands] = useState<FavoriteCommandItem[]>([]);
   const [favoriteDialogOpen, setFavoriteDialogOpen] = useState<boolean>(false);
@@ -257,10 +257,6 @@ export default function Home() {
 
   const handleSelectFavoriteCommand = (selected: FavoriteCommandItem) => {
     setCommandText(selected.command);
-    setStatus({
-      text: t("homePage.toast.favorite_loaded", { title: selected.title }),
-      kind: "info",
-    });
     window.setTimeout(() => {
       const el = commandInputRef.current;
       if (!el) return;
@@ -314,23 +310,35 @@ export default function Home() {
           </Button>
         </div>
 
-        <p className="text-xs text-muted-foreground break-all">
+        {/* <p className="text-xs text-muted-foreground break-all">
           {t("homePage.labels.input")}: {inputPaths.length > 0 ? inputPaths.join(" ; ") : t("homePage.labels.not_selected")}
         </p>
         <p className="text-xs text-muted-foreground break-all">
           {t("homePage.labels.output")}: {outputDir || t("homePage.labels.not_selected")}
-        </p>
+        </p> */}
         <div className="space-y-1">
-          <div className="text-muted-foreground flex items-center gap-1">
-            <span className="font-bold text-sm">{t("homePage.labels.realtime_logs")}</span>
-            {status.text && (
-              <div
-                className={`rounded-md border px-2 py-0 text-xs transition-colors ${statusClassName}`}
-              >
-                {status.text}
-              </div>
-            )}
+          
+          <div className="flex items-center gap-1 text-xs">
+            <span className=" text-muted-foreground whitespace-nowrap">
+              {t("homePage.labels.status")}
+            </span>
+            <span className={statusClassName}>{status.text}</span>
+            {/* <span className="font-bold text-sm">{t("homePage.labels.realtime_logs")}</span> */}
           </div>
+          {resolvedOutputPath && lastTaskCompleted && (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground break-all">
+              <span>{t("homePage.labels.output_file")}: {resolvedOutputPath}</span>
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-5 px-1"
+                onClick={revealOutputInDir}
+                title={t("homePage.actions.open_output_folder")}
+              >
+                <FolderOpen className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          )}
           <VirtualLogViewer
             lines={taskLogs}
             height={192}
@@ -339,20 +347,7 @@ export default function Home() {
             backToBottomText={t("homePage.viewer.back_to_bottom")}
           />
         </div>
-        {resolvedOutputPath && lastTaskCompleted && (
-          <div className="flex items-center gap-1 text-xs text-muted-foreground break-all">
-            <span>{t("homePage.labels.output_file")}: {resolvedOutputPath}</span>
-            <Button
-              type="button"
-              variant="ghost"
-              className="h-5 px-1"
-              onClick={revealOutputInDir}
-              title={t("homePage.actions.open_output_folder")}
-            >
-              <FolderOpen className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        )}
+       
       </section>
 
       <Card>

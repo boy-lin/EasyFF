@@ -85,6 +85,7 @@ export const appRouter = createHashRouter([
           },
           {
             path: "favorite",
+            loader: preloadI18nNamespaces(["ffmpeg"]),
             children: [{ path: "commands", element: withSuspense(<FavoriteCommandsPage />) }],
           },
           {
@@ -114,3 +115,4 @@ export const appRouter = createHashRouter([
     loader: preloadI18nNamespaces(["common"]),
   },
 ]);
+

@@ -26,8 +26,6 @@ type NavItem = {
   badgeCount?: number;
 };
 
-
-
 type SidebarContextValue = {
   open: boolean;
   setOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -476,9 +474,7 @@ const SidebarToggle = () => {
 
 const DesktopSidebar = ({ className }: { className?: string }) => {
   const { open, animate } = useSidebar();
-  const { i18n } = useTranslation("common");
-  const isEnglish = (i18n.resolvedLanguage || i18n.language || "").startsWith("en");
-  const width = open ? (isEnglish ? "14rem" : "12rem") : "4.25rem";
+  const width = open ? "10rem" : "4.25rem";
   return (
     <motion.aside
       initial={animate ? { opacity: 0, x: -8 } : undefined}

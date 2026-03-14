@@ -18,12 +18,7 @@
     "build:linux": "tauri build --target x86_64-unknown-linux-gnu",
     "build:all": "npm run build:mac && npm run build:win && npm run build:linux",
     "build:all:mac": "npm run build:mac:arm && npm run build:mac:intel",
-    "build:remote": "TAURI_REMOTE_URL=${TAURI_REMOTE_URL} pnpm tauri:build",
-    "build:remote:mac": "TAURI_REMOTE_URL=${TAURI_REMOTE_URL} pnpm build:mac",
-    "build:remote:win": "TAURI_REMOTE_URL=${TAURI_REMOTE_URL} pnpm build:win",
     "bump:version": "node scripts/bump-version.mjs",
-    "check:deps": "bash scripts/check-ffmpeg-deps.sh",
-    "check:deps:win": "powershell -ExecutionPolicy Bypass -File scripts/check-ffmpeg-deps.ps1",
     "simulate:updater": "node scripts/simulate-updater-release.mjs",
     "release:local": "node scripts/local-release-upload.mjs"
   },

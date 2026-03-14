@@ -18,7 +18,7 @@ type UploadButtonProps = {
 };
 
 export function UploadButton({ name, multiple, extensions, onAddPaths }: UploadButtonProps) {
-  const { t } = useTranslation("task");
+  const { t } = useTranslation("common");
   const [loading, setLoading] = useState(false);
 
   const addFiles = useCallback(async () => {

@@ -121,11 +121,25 @@ export default function FFmpegVersionManagerPage() {
     });
   }, [init, t]);
 
+  const resolveDownloadErrorMessage = (error: unknown): string => {
+    if (!(error instanceof Error)) return t("toast.download_failed");
+    const raw = error.message || "";
+    const normalized = raw.toLowerCase();
+    if (
+      normalized.includes("7z extraction failed") ||
+      normalized.includes("install 7-zip") ||
+      normalized.includes("zip/tar.xz source")
+    ) {
+      return t("toast.download_extract_failed_7z");
+    }
+    return raw;
+  };
+
   const handleDownload = async (rowKey: string) => {
     try {
       await downloadVersion(rowKey);
     } catch (error) {
-      const message = error instanceof Error ? error.message : t("toast.download_failed");
+      const message = resolveDownloadErrorMessage(error);
       toast.error(message);
     }
   };
@@ -171,16 +185,7 @@ export default function FFmpegVersionManagerPage() {
         header: t("table.version"),
         cell: ({ row }) => <span className="font-medium">{row.original.version}</span>,
       },
-      {
-        accessorKey: "releaseDate",
-        header: t("table.release_date"),
-        cell: ({ row }) => <span className="text-muted-foreground">{row.original.releaseDate}</span>,
-      },
-      {
-        accessorKey: "arch",
-        header: t("table.arch"),
-        cell: ({ row }) => row.original.arch,
-      },
+
       {
         id: "status",
         header: t("table.status"),
@@ -191,6 +196,16 @@ export default function FFmpegVersionManagerPage() {
           const status = getRemoteStatusMeta(item, downloading, downloaded, t);
           return <Badge className={status.className}>{status.text}</Badge>;
         },
+      },
+      {
+        accessorKey: "arch",
+        header: t("table.arch"),
+        cell: ({ row }) => row.original.arch,
+      },
+      {
+        accessorKey: "releaseDate",
+        header: t("table.release_date"),
+        cell: ({ row }) => <span className="text-muted-foreground">{row.original.releaseDate}</span>,
       },
       {
         id: "actions",

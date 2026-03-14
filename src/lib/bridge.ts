@@ -1,59 +1,10 @@
 import { emit, listen, UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Channel, convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { FileType, MediaDetails, MediaDetailsWithResolve } from "@/types/tasks";
-import { extractFilenameFromPath } from "./utils";
+import { Channel, invoke } from "@tauri-apps/api/core";
+import { FileType } from "@/types/tasks";
 import { MediaTaskType } from "@/types/tasks";
 import { handleDirectoryToFiles } from "./file";
 import { MediaTaskEvent } from "./mediaTaskEvent";
-
-type ProbeStream = {
-  index: number;
-  codec_type: string;
-  codec_name: string;
-  codec_long_name?: string;
-  time_base?: string;
-  pix_fmt?: string;
-  width?: number;
-  height?: number;
-  frame_rate?: string;
-  channels?: number;
-  sample_rate?: number;
-  bit_rate?: number;
-  bit_depth?: number;
-  bits_per_sample?: number;
-  tags?: Record<string, string>;
-};
-
-type ProbeBase = {
-  path: string;
-  extension: string;
-  size: number;
-  format_name?: string;
-  format_long_name?: string;
-  duration?: number;
-  tags?: Record<string, string>;
-};
-
-type ProbeVideoDetails = {
-  streams: ProbeStream[];
-};
-type ProbeAudioDetails = {
-  streams: ProbeStream[];
-};
-type ProbeImageDetails = {
-  streams: ProbeStream[];
-};
-
-type MediaProbeResult = {
-  kind: "video" | "audio" | "image" | "unknown";
-  base: ProbeBase;
-  details:
-    | { kind: "video"; details: ProbeVideoDetails }
-    | { kind: "audio"; details: ProbeAudioDetails }
-    | { kind: "image"; details: ProbeImageDetails }
-    | { kind: "unknown" };
-};
 
 export type DownloadProgress = {
   stage: string;
@@ -62,14 +13,6 @@ export type DownloadProgress = {
 };
 
 export type BridgeEvents = {
-  "video-frame": {
-    width: number;
-    height: number;
-    data?: number[] | Uint8Array;
-    data_base64?: string;
-  };
-  "video-complete": string;
-  "video-error": string;
   "single-instance": {
     args?: string[];
     cwd?: string;
@@ -82,13 +25,6 @@ export type BridgeEvents = {
     line: string;
     ts: number;
   };
-  media_thumbnail: {
-    requestId: string;
-    result: ThumbnailPayload | null;
-    error?: string | null;
-  };
-  "video-mse-stream-end": string;
-  "video-mse-stream-error": string;
   "ffmpeg-download-progress": {
     rowKey: string;
     downloaded: number;
@@ -254,14 +190,6 @@ class Bridge {
   private disposers: UnlistenFn[] = [];
   private fallbackTarget = new EventTarget();
   private tauriReady = true;
-  private readonly maxMediaDetailsConcurrency = 3;
-  private mediaDetailsActive = 0;
-  private mediaDetailsWaiters: Array<() => void> = [];
-  private mediaDetailsCache = new Map<string, MediaDetailsWithResolve>();
-  private mediaDetailsInflight = new Map<
-    string,
-    Promise<MediaDetailsWithResolve>
-  >();
   private tauriEventUnlisteners = new Map<string, UnlistenFn>();
   private tauriEventHandlers = new Map<
     string,
@@ -449,228 +377,6 @@ class Bridge {
     return err;
   }
 
-  private async acquireMediaDetailsSlot(): Promise<void> {
-    if (this.mediaDetailsActive < this.maxMediaDetailsConcurrency) {
-      this.mediaDetailsActive += 1;
-      return;
-    }
-    await new Promise<void>((resolve) => {
-      this.mediaDetailsWaiters.push(() => {
-        this.mediaDetailsActive += 1;
-        resolve();
-      });
-    });
-  }
-
-  private releaseMediaDetailsSlot() {
-    this.mediaDetailsActive = Math.max(0, this.mediaDetailsActive - 1);
-    const next = this.mediaDetailsWaiters.shift();
-    if (next) next();
-  }
-
-  private async withMediaDetailsSlot<T>(task: () => Promise<T>): Promise<T> {
-    await this.acquireMediaDetailsSlot();
-    try {
-      return await task();
-    } finally {
-      this.releaseMediaDetailsSlot();
-    }
-  }
-
-  private normalizeMediaDetails(
-    path: string,
-    details: MediaDetails,
-  ): MediaDetailsWithResolve {
-    let format = details.extension.toLowerCase();
-    if (!details.extension) {
-      format = details.format_names.split(",")[0];
-    }
-
-    let resolution = "";
-    const vidStream = details.streams.find((s) => s.codec_type === "video");
-    if (vidStream && vidStream.width && vidStream.height) {
-      resolution = `${vidStream.width}*${vidStream.height}`;
-    }
-    const title = extractFilenameFromPath(path);
-    return {
-      ...details,
-      format,
-      resolution,
-      title,
-    };
-  }
-
-  private mapProbeToMediaDetails(probe: MediaProbeResult): MediaDetails {
-    const detailsKind = probe.details?.kind;
-    const typedDetails =
-      detailsKind === "video" ||
-      detailsKind === "audio" ||
-      detailsKind === "image"
-        ? probe.details.details
-        : undefined;
-    const streams = (typedDetails?.streams || []).map((stream) => ({
-      index: stream.index,
-      codec_type: stream.codec_type,
-      codec_name: stream.codec_name,
-      codec_long_name: stream.codec_long_name,
-      time_base: stream.time_base,
-      pix_fmt: stream.pix_fmt,
-      width: stream.width,
-      height: stream.height,
-      frame_rate: stream.frame_rate,
-      channels: stream.channels,
-      sample_rate: stream.sample_rate,
-      bit_rate: stream.bit_rate,
-      bit_depth: stream.bit_depth,
-      bits_per_sample: stream.bits_per_sample,
-    }));
-
-    return {
-      path: probe.base.path,
-      extension: probe.base.extension || "",
-      format_names: probe.base.format_name || "",
-      title: extractFilenameFromPath(probe.base.path),
-      format_long_name: probe.base.format_long_name,
-      duration: probe.base.duration ?? 0,
-      size: probe.base.size ?? 0,
-      streams,
-      tags: probe.base.tags || {},
-      stream_tags: streams.map(
-        (_, index) => typedDetails?.streams?.[index]?.tags || {},
-      ),
-    };
-  }
-
-  private async getCachedMediaDetails(
-    cacheKey: string,
-    loader: () => Promise<MediaDetailsWithResolve>,
-  ): Promise<MediaDetailsWithResolve> {
-    const cached = this.mediaDetailsCache.get(cacheKey);
-    if (cached) return cached;
-
-    const inflight = this.mediaDetailsInflight.get(cacheKey);
-    if (inflight) return inflight;
-
-    const promise = this.withMediaDetailsSlot(async () => {
-      const result = await loader();
-      this.mediaDetailsCache.set(cacheKey, result);
-      return result;
-    }).finally(() => {
-      this.mediaDetailsInflight.delete(cacheKey);
-    });
-
-    this.mediaDetailsInflight.set(cacheKey, promise);
-    return promise;
-  }
-
-  async getMediaDetails(path: string): Promise<MediaDetailsWithResolve> {
-    const normalizedPath = path.trim();
-    const cacheKey = `media:${normalizedPath}`;
-    return this.getCachedMediaDetails(cacheKey, async () => {
-      const probe = await this.invoke<MediaProbeResult>("probe_media_info", {
-        path: normalizedPath,
-      });
-      const details = this.mapProbeToMediaDetails(probe);
-      return this.normalizeMediaDetails(normalizedPath, details);
-    });
-  }
-
-  async getMediaDetailsBatch(
-    paths: string[],
-  ): Promise<MediaDetailsWithResolve[]> {
-    const normalizedPaths = paths
-      .map((path) => path.trim())
-      .filter((path) => path.length > 0);
-    if (normalizedPaths.length === 0) return [];
-
-    const toFetch = Array.from(
-      new Set(
-        normalizedPaths.filter(
-          (path) => !this.mediaDetailsCache.has(`media:${path}`),
-        ),
-      ),
-    );
-
-    if (toFetch.length > 0) {
-      const deferred = new Map<
-        string,
-        {
-          resolve: (value: MediaDetailsWithResolve) => void;
-          reject: (error: unknown) => void;
-        }
-      >();
-
-      toFetch.forEach((sourcePath) => {
-        const cacheKey = `media:${sourcePath}`;
-        let resolve!: (value: MediaDetailsWithResolve) => void;
-        let reject!: (error: unknown) => void;
-        const promise = new Promise<MediaDetailsWithResolve>((res, rej) => {
-          resolve = res;
-          reject = rej;
-        });
-        deferred.set(cacheKey, { resolve, reject });
-        this.mediaDetailsInflight.set(cacheKey, promise);
-      });
-
-      try {
-        const fetched = await this.withMediaDetailsSlot(() =>
-          this.invoke<MediaProbeResult[]>("probe_media_info_batch", {
-            paths: toFetch,
-          }),
-        );
-        fetched.forEach((probe, index) => {
-          const sourcePath = toFetch[index];
-          if (!sourcePath) return;
-          const cacheKey = `media:${sourcePath}`;
-          const details = this.mapProbeToMediaDetails(probe);
-          const normalized = this.normalizeMediaDetails(sourcePath, details);
-          this.mediaDetailsCache.set(cacheKey, normalized);
-          deferred.get(cacheKey)?.resolve(normalized);
-        });
-      } catch (error) {
-        deferred.forEach(({ reject }) => reject(error));
-      } finally {
-        toFetch.forEach((sourcePath) => {
-          this.mediaDetailsInflight.delete(`media:${sourcePath}`);
-        });
-      }
-    }
-
-    return Promise.all(
-      normalizedPaths.map((path) => this.getMediaDetails(path)),
-    );
-  }
-
-  async getImageDetails(path: string): Promise<MediaDetailsWithResolve> {
-    const normalizedPath = path.trim();
-    const cacheKey = `image:${normalizedPath}`;
-    return this.getCachedMediaDetails(cacheKey, async () => {
-      const details = await this.invoke<MediaDetails>(
-        "get_detailed_image_info",
-        {
-          path: normalizedPath,
-        },
-      );
-      return this.normalizeMediaDetails(normalizedPath, details);
-    });
-  }
-
-  async checkHardwareAcceleration(): Promise<HardwareSupport> {
-    return this.invoke<HardwareSupport>("check_hardware_acceleration");
-  }
-
-  async runSelfCheck(): Promise<SelfCheckResult> {
-    return this.invoke<SelfCheckResult>("run_self_check");
-  }
-
-  async getMediaInfo<T = unknown>(path: string): Promise<T> {
-    return this.invoke<T>("get_media_info", { path });
-  }
-
-  async writeMediaMetadata(args: WriteMetadataArgs): Promise<void> {
-    await this.invoke("write_media_metadata", { args });
-  }
-
   async reportClientLog(log: ClientLogInput): Promise<void> {
     await this.invoke("report_client_log", { log });
   }
@@ -738,78 +444,8 @@ class Bridge {
     await this.invoke("media_task_cancel_task", { id });
   }
 
-  async convertAudioFile(args: Record<string, unknown>): Promise<void> {
-    await this.invoke("convert_audio_file", { args });
-  }
-
   async revealItemInDirFallback(path: string): Promise<void> {
     await this.invoke("plugin:opener|reveal_item_in_dir", { paths: [path] });
-  }
-
-  async videoPlayerOpen(
-    input: VideoPlayerOpenInput,
-    onFrame?: (frameBuffer: ArrayBuffer) => void,
-  ): Promise<void> {
-    const args: Record<string, unknown> = {
-      path: input.path,
-      preview: input.preview,
-    };
-    this.videoFrameChannel = null;
-    if (onFrame) {
-      const channel = new Channel<unknown>();
-      channel.onmessage = (payload) => {
-        if (payload instanceof ArrayBuffer) {
-          onFrame(payload);
-          return;
-        }
-        if (ArrayBuffer.isView(payload)) {
-          const view = payload;
-          onFrame(
-            view.buffer.slice(
-              view.byteOffset,
-              view.byteOffset + view.byteLength,
-            ) as ArrayBuffer,
-          );
-        }
-      };
-      this.videoFrameChannel = channel;
-      args.frameChannel = channel;
-    }
-    await this.invoke("video_player_open", args);
-  }
-
-  async videoPlayerPlay(): Promise<void> {
-    await this.invoke("video_player_play");
-  }
-
-  async videoPlayerPause(): Promise<void> {
-    await this.invoke("video_player_pause");
-  }
-
-  async videoPlayerSeek(position: number): Promise<void> {
-    await this.invoke("video_player_seek", { position });
-  }
-
-  async videoPlayerGetPosition(): Promise<number> {
-    return this.invoke<number>("video_player_get_position");
-  }
-
-  async videoPlayerGetDuration(): Promise<number> {
-    return this.invoke<number>("video_player_get_duration");
-  }
-
-  async videoPlayerGetSize(): Promise<VideoPlayerSize> {
-    const result = await this.invoke<[number, number]>("video_player_get_size");
-    return { width: result[0], height: result[1] };
-  }
-
-  async videoPlayerSetVolume(volume: number): Promise<void> {
-    await this.invoke("video_player_set_volume", { volume });
-  }
-
-  async videoPlayerClose(): Promise<void> {
-    await this.invoke("video_player_close");
-    this.videoFrameChannel = null;
   }
 
   async prepareVideoForWebPlayback(
@@ -819,68 +455,6 @@ class Bridge {
       "prepare_video_for_web_playback",
       { path },
     );
-  }
-
-  async videoMseStreamOpen(
-    path: string,
-    onChunk: (chunk: ArrayBuffer) => void,
-  ): Promise<void> {
-    const channel = new Channel<unknown>();
-    channel.onmessage = (payload) => {
-      if (payload instanceof ArrayBuffer) {
-        onChunk(payload);
-        return;
-      }
-      if (ArrayBuffer.isView(payload)) {
-        const view = payload;
-        onChunk(
-          view.buffer.slice(
-            view.byteOffset,
-            view.byteOffset + view.byteLength,
-          ) as ArrayBuffer,
-        );
-      }
-    };
-    await this.invoke("video_mse_stream_open", {
-      path,
-      chunkChannel: channel,
-    });
-  }
-
-  async videoMseStreamClose(): Promise<void> {
-    await this.invoke("video_mse_stream_close");
-  }
-
-  async audioPlayerOpen(path: string): Promise<string> {
-    return this.invoke<string>("audio_player_open", { path });
-  }
-
-  async audioPlayerPlay(): Promise<void> {
-    await this.invoke("audio_player_play");
-  }
-
-  async audioPlayerPause(): Promise<void> {
-    await this.invoke("audio_player_pause");
-  }
-
-  async audioPlayerSeek(position: number): Promise<void> {
-    await this.invoke("audio_player_seek", { position });
-  }
-
-  async audioPlayerStop(): Promise<void> {
-    await this.invoke("audio_player_stop");
-  }
-
-  async audioPlayerSetVolume(volume: number): Promise<void> {
-    await this.invoke("audio_player_set_volume", { volume });
-  }
-
-  async audioPlayerGetPosition(): Promise<number> {
-    return this.invoke<number>("audio_player_get_position");
-  }
-
-  async audioPlayerGetDuration(): Promise<number> {
-    return this.invoke<number>("audio_player_get_duration");
   }
 
   async getDeviceId(): Promise<string> {

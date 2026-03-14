@@ -278,6 +278,25 @@ export const useFfmpegStore = create<FfmpegStore>()(
               ? error.message
               : String(error ?? "unknown error");
           const canceled = reason.toLowerCase().includes("cancel");
+          set((state) => {
+            const nextProgress = { ...state.downloadProgress };
+            delete nextProgress[rowKey];
+            return {
+              downloadProgress: nextProgress,
+              installedVersions: canceled
+                ? state.installedVersions.filter(
+                    (item) =>
+                      !(item.rowKey === rowKey && !item.installed && !item.isActive),
+                  )
+                : state.installedVersions.map((item) => {
+                    if (item.rowKey !== rowKey) return item;
+                    if (item.isActive || item.installed) {
+                      return { ...item, downloadState: "downloaded" };
+                    }
+                    return { ...item, downloadState: "failed" };
+                  }),
+            };
+          });
           if (!canceled) {
             await bridge.updateFfmpegDownloadState(rowKey, "failed");
           }
@@ -388,11 +407,7 @@ export const useFfmpegStore = create<FfmpegStore>()(
 
       ensureReadyForHome: async () => {
         const stage = get().ensureStage;
-        if (
-          stage === "checking" ||
-          stage === "downloading" ||
-          stage === "activating"
-        ) {
+        if (["ready", "checking", "downloading", "activating"].includes(stage)) {
           return;
         }
 
