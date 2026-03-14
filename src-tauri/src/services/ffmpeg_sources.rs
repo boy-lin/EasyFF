@@ -141,9 +141,25 @@ pub fn fetch_versions(
                 HostOs::Macos,
                 "8.0.0",
                 "2026-03-13",
-                "https://s3.tebi.io/tebi.2342342.xyz/static/ffmpeg/mac/ffmpeg-8.0.7z",
+                "https://tebi.2342342.xyz/static/ffmpeg/mac/ffmpeg-8.0.7z",
                 Some("x64"),
-            )
+            ),
+            version_item(
+                SourceKind::Ling,
+                HostOs::Macos,
+                "6.1.1",
+                "2025-06-18",
+                "https://tebi.2342342.xyz/static/ffmpeg/mac/ffmpeg-darwin-arm64.gz",
+                Some("arm64"),
+            ),
+            version_item(
+                SourceKind::Ling,
+                HostOs::Macos,
+                "5.0.1",
+                "2022-06-29",
+                "https://tebi.2342342.xyz/static/ffmpeg/mac/b5.0.1-darwin-arm64.gz",
+                Some("arm64"),
+            ),
             
         ],
         (SourceKind::Gyan, HostOs::Windows) => vec![

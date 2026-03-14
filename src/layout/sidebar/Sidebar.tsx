@@ -143,7 +143,7 @@ const SidebarLogo = () => {
     <motion.div variants={itemVariants} className="px-5 py-4">
       <div className="flex items-center gap-2 h-9">
         <div className="w-8 h-8 rounded-lg flex items-center justify-center grow-0 shrink-0">
-          <img src="/icon-128.png" alt="" />
+          <img src="/icon-512.png" alt="" />
         </div>
         <motion.div
           animate={{
