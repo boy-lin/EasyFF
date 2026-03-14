@@ -42,9 +42,6 @@ function formatDateTime(ts: number): string {
 export default function Home() {
   const { t } = useTranslation("ffmpeg");
   const [searchParams, setSearchParams] = useSearchParams();
-  const [commandText, setCommandText] = useState<string>(
-    "ffmpeg -i input.mp4 -vn -c:a libmp3lame -q:a 2 output.mp3"
-  );
   const [inputPaths, setInputPaths] = useState<string[]>([]);
   const [resolvedOutputPath, setResolvedOutputPath] = useState<string>("");
   const { status, setStatus, className: statusClassName } = useUiStatus();
@@ -56,9 +53,11 @@ export default function Home() {
   const [favoriteSaving, setFavoriteSaving] = useState<boolean>(false);
   const commandInputRef = useRef<HTMLTextAreaElement | null>(null);
   const outputDir = useSettingsStore((s) => s.outputPath);
+  const commandText = useSettingsStore((s) => s.homeCommandText);
   const settingsLoading = useSettingsStore((s) => s.isLoading);
   const initSettings = useSettingsStore((s) => s.init);
   const setOutputPath = useSettingsStore((s) => s.setOutputPath);
+  const setHomeCommandText = useSettingsStore((s) => s.setHomeCommandText);
   const ffmpegRuntimeVersion = useFfmpegStore((s) => s.runtimeVersion);
   const ffmpegExecutablePath = useFfmpegStore((s) => s.runtimeExecutablePath);
   const ffmpegInstalled = useFfmpegStore((s) => s.installedVersions);
@@ -118,7 +117,7 @@ export default function Home() {
     if (!incoming) return;
     const nextCommand = incoming.trim();
     if (nextCommand) {
-      setCommandText(nextCommand);
+      setHomeCommandText(nextCommand);
       window.setTimeout(() => {
         const el = commandInputRef.current;
         if (!el) return;
@@ -129,12 +128,12 @@ export default function Home() {
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete("commandText");
     setSearchParams(nextParams, { replace: true });
-  }, [searchParams, setSearchParams]);
+  }, [searchParams, setHomeCommandText, setSearchParams]);
 
   useEffect(() => {
     if (!outputDir || inputPaths.length === 0) return;
     const rebuilt = buildCommandText(commandText, inputPaths, outputDir);
-    setCommandText(rebuilt.text);
+    setHomeCommandText(rebuilt.text);
     setResolvedOutputPath(rebuilt.outputPath);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outputDir]);
@@ -155,7 +154,7 @@ export default function Home() {
     setInputPaths(paths);
 
     const rebuilt = buildCommandText(commandText, paths, outputDir);
-    setCommandText(rebuilt.text);
+    setHomeCommandText(rebuilt.text);
     setResolvedOutputPath(rebuilt.outputPath);
   };
 
@@ -171,7 +170,7 @@ export default function Home() {
 
     await setOutputPath(dir);
     const rebuilt = buildCommandText(commandText, inputPaths, dir);
-    setCommandText(rebuilt.text);
+    setHomeCommandText(rebuilt.text);
     setResolvedOutputPath(rebuilt.outputPath);
   };
 
@@ -256,7 +255,7 @@ export default function Home() {
   };
 
   const handleSelectFavoriteCommand = (selected: FavoriteCommandItem) => {
-    setCommandText(selected.command);
+    setHomeCommandText(selected.command);
     window.setTimeout(() => {
       const el = commandInputRef.current;
       if (!el) return;
@@ -282,7 +281,7 @@ export default function Home() {
           ref={commandInputRef}
           className="min-h-24 font-mono text-sm"
           value={commandText}
-          onChange={(e) => setCommandText(e.target.value)}
+          onChange={(e) => setHomeCommandText(e.target.value)}
         />
 
         <div className="flex flex-wrap gap-2">

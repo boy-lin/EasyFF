@@ -122,6 +122,35 @@ fn collect_path_dirs_from_env() -> Vec<PathBuf> {
 fn collect_windows_ffmpeg_dirs() -> Vec<PathBuf> {
     let mut dirs = collect_path_dirs_from_env();
 
+    #[cfg(target_os = "windows")]
+    fn extend_dirs_from_registry_path(dirs: &mut Vec<PathBuf>, path_value: &str) {
+        for dir in std::env::split_paths(path_value) {
+            if !dirs.iter().any(|item| item == &dir) {
+                dirs.push(dir);
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use winreg::RegKey;
+        use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+
+        if let Ok(env) = RegKey::predef(HKEY_CURRENT_USER).open_subkey("Environment") {
+            if let Ok(path_value) = env.get_value::<String, _>("Path") {
+                extend_dirs_from_registry_path(&mut dirs, path_value.as_str());
+            }
+        }
+
+        if let Ok(env) = RegKey::predef(HKEY_LOCAL_MACHINE)
+            .open_subkey("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment")
+        {
+            if let Ok(path_value) = env.get_value::<String, _>("Path") {
+                extend_dirs_from_registry_path(&mut dirs, path_value.as_str());
+            }
+        }
+    }
+
     if let Some(program_files) = std::env::var_os("ProgramFiles") {
         let path = PathBuf::from(program_files).join("ffmpeg").join("bin");
         if !dirs.iter().any(|item| item == &path) {
