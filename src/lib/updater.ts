@@ -4,7 +4,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { bridge, type UpdaterGuardStatus } from "@/lib/bridge";
 import { toast } from "sonner";
 
-const UPDATER_META_URL = "https://avi.2342342.xyz/api/app/latest";
+const UPDATER_META_URL = import.meta.env.VITE_BASE_API_URL + "/api/app/latest";
 
 type UpdaterMeta = {
   mandatory?: boolean;

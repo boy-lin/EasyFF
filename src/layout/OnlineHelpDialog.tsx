@@ -73,12 +73,12 @@ export default function OnlineHelpDialog() {
                 </a>
               </div>
               <div>
-                Telegram: 
-                <a href="https://t.me/HollyWWH" target="_blank" rel="noreferrer">https://t.me/HollyWWH</a>
+                Telegram:
+                <a className="text-primary hover:underline" href="https://t.me/HollyWWH" target="_blank" rel="noreferrer">https://t.me/HollyWWH</a>
               </div>
               <div>
-                小红书: 
-                <a href="https://xhslink.com/m/A9hmfzL68i1" target="_blank" rel="noreferrer">https://xhslink.com/m/A9hmfzL68i1</a>
+                小红书:
+                <a className="text-primary hover:underline" href="https://xhslink.com/m/A9hmfzL68i1" target="_blank" rel="noreferrer">https://xhslink.com/m/A9hmfzL68i1</a>
               </div>
             </div>
 

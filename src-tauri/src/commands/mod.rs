@@ -12,6 +12,18 @@ use tauri::command;
 use tauri::AppHandle;
 use tauri::{Emitter, Manager};
 
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+#[cfg(target_os = "windows")]
+fn apply_no_window(cmd: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    cmd.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(target_os = "windows"))]
+fn apply_no_window(_cmd: &mut Command) {}
+
 fn detect_host_os() -> String {
     if cfg!(target_os = "windows") {
         "windows".to_string()
@@ -47,7 +59,9 @@ fn parse_ffmpeg_semver(version_line: &str) -> String {
 }
 
 fn probe_ffmpeg_binary(bin: &str) -> Option<(String, String)> {
-    let output = Command::new(bin).arg("-version").output().ok()?;
+    let mut cmd = Command::new(bin);
+    apply_no_window(&mut cmd);
+    let output = cmd.arg("-version").output().ok()?;
     if !output.status.success() {
         return None;
     }
@@ -59,16 +73,46 @@ fn probe_ffmpeg_binary(bin: &str) -> Option<(String, String)> {
     Some((first_line.to_string(), bin.to_string()))
 }
 
-fn probe_global_ffmpeg() -> Option<(String, String)> {
-    let mut candidates: Vec<&str> = Vec::new();
-    if cfg!(target_os = "windows") {
-        candidates.push("ffmpeg.exe");
-    }
-    candidates.push("ffmpeg");
+fn build_ffmpeg_probe_candidates(active_path: Option<&str>) -> Vec<String> {
+    let mut candidates: Vec<String> = Vec::new();
 
+    if let Some(path) = active_path
+        .map(|v| v.trim())
+        .filter(|v| !v.is_empty())
+        .map(|v| v.to_string())
+    {
+        candidates.push(path);
+    }
+
+    if cfg!(target_os = "windows") {
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                let local = exe_dir.join("ffmpeg.exe");
+                if local.exists() {
+                    candidates.push(local.to_string_lossy().to_string());
+                }
+            }
+        }
+        candidates.push("ffmpeg.exe".to_string());
+        candidates.push("ffmpeg".to_string());
+    } else {
+        candidates.push("ffmpeg".to_string());
+    }
+
+    let mut deduped: Vec<String> = Vec::new();
+    for item in candidates {
+        if !deduped.iter().any(|v| v == &item) {
+            deduped.push(item);
+        }
+    }
+    deduped
+}
+
+fn probe_global_ffmpeg(active_path: Option<&str>) -> Option<(String, String)> {
+    let candidates = build_ffmpeg_probe_candidates(active_path);
     for bin in candidates {
-        if let Some(result) = probe_ffmpeg_binary(bin) {
-            return Some(result);
+        if let Some((version, _)) = probe_ffmpeg_binary(bin.as_str()) {
+            return Some((version, bin));
         }
     }
     None
@@ -85,7 +129,7 @@ async fn list_installed_ffmpeg_versions_with_system(
         .iter()
         .any(|item| item.row_key == "__system_ffmpeg__");
 
-    let system_probe = tauri::async_runtime::spawn_blocking(probe_global_ffmpeg)
+    let system_probe = tauri::async_runtime::spawn_blocking(|| probe_global_ffmpeg(None))
         .await
         .map_err(|e| format!("[JOIN:list_installed_ffmpeg_versions] {}", e))?;
 
@@ -1000,36 +1044,7 @@ pub async fn get_current_ffmpeg_version() -> Result<serde_json::Value, String> {
         .as_ref()
         .map(|v| format!("{} ({})", v.version, v.source));
 
-    let probe = tauri::async_runtime::spawn_blocking(move || -> Option<(String, String)> {
-        let mut candidates: Vec<String> = Vec::new();
-        if let Some(path) = active_path.clone() {
-            candidates.push(path);
-        }
-        if cfg!(target_os = "windows") {
-            if let Ok(exe_path) = std::env::current_exe() {
-                if let Some(exe_dir) = exe_path.parent() {
-                    let local = exe_dir.join("ffmpeg.exe");
-                    if local.exists() {
-                        let p = local.to_string_lossy().to_string();
-                        if !candidates.iter().any(|v| v == &p) {
-                            candidates.push(p);
-                        }
-                    }
-                }
-            }
-            candidates.push("ffmpeg.exe".to_string());
-            candidates.push("ffmpeg".to_string());
-        } else {
-            candidates.push("ffmpeg".to_string());
-        }
-
-        for bin in candidates {
-            if let Some((version, _)) = probe_ffmpeg_binary(bin.as_str()) {
-                return Some((version, bin));
-            }
-        }
-        None
-    })
+    let probe = tauri::async_runtime::spawn_blocking(move || probe_global_ffmpeg(active_path.as_deref()))
     .await
     .map_err(|e| format!("[JOIN:get_current_ffmpeg_version] {}", e))?;
 

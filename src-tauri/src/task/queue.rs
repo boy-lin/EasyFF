@@ -9,6 +9,17 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
 
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+#[cfg(target_os = "windows")]
+fn apply_no_window(cmd: &mut Command) {
+    cmd.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(target_os = "windows"))]
+fn apply_no_window(_cmd: &mut Command) {}
+
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct MediaTaskRequest {
     pub task_id: String,
@@ -144,6 +155,7 @@ async fn run_task(app: AppHandle, task: MediaTaskRequest) {
     emit_event(&app, &task, "progress", Some(5), None, None, None).await;
 
     let mut cmd = Command::new(task.command.as_str());
+    apply_no_window(&mut cmd);
     cmd.args(task.args.as_slice());
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
