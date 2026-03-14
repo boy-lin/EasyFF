@@ -53,7 +53,10 @@ type FfmpegStore = {
   refreshAll: () => Promise<void>;
   downloadVersion: (rowKey: string, options?: DownloadOptions) => Promise<void>;
   cancelDownload: (rowKey: string) => Promise<void>;
-  activateVersion: (rowKey: string, options?: { quietEnsure?: boolean }) => Promise<void>;
+  activateVersion: (
+    rowKey: string,
+    options?: { quietEnsure?: boolean },
+  ) => Promise<void>;
   deleteVersion: (rowKey: string) => Promise<void>;
   ensureReadyForHome: () => Promise<void>;
 };
@@ -96,7 +99,8 @@ const mergeInstalledWithPending = (
   const rowKeySet = new Set(rows.map((item) => item.rowKey));
   const pendingFromPrev = prev.filter(
     (item) =>
-      (item.downloadState === "downloading" || progress[item.rowKey] !== undefined) &&
+      (item.downloadState === "downloading" ||
+        progress[item.rowKey] !== undefined) &&
       !rowKeySet.has(item.rowKey),
   );
   return [...rows, ...pendingFromPrev];
@@ -108,7 +112,7 @@ export const useFfmpegStore = create<FfmpegStore>()(
       remoteVersions: [],
       installedVersions: [],
       sourceMessage: null,
-      runtimeVersion: "loading...",
+      runtimeVersion: "unknown",
       runtimeExecutablePath: null,
       busyRowKey: null,
       cancelingRowKey: null,
@@ -176,7 +180,11 @@ export const useFfmpegStore = create<FfmpegStore>()(
           get().remoteVersions.find((item) => item.rowKey === rowKey) ||
           (await bridge
             .listFfmpegVersions({ limit: 50, offset: 0 })
-            .then((page) => page.list.map(mapDbRowToView).find((item) => item.rowKey === rowKey)));
+            .then((page) =>
+              page.list
+                .map(mapDbRowToView)
+                .find((item) => item.rowKey === rowKey),
+            ));
 
         if (!remote) {
           if (!options?.silentError) {
@@ -200,20 +208,28 @@ export const useFfmpegStore = create<FfmpegStore>()(
             installed: false,
             isActive: false,
           };
-          const idx = state.installedVersions.findIndex((item) => item.rowKey === rowKey);
+          const idx = state.installedVersions.findIndex(
+            (item) => item.rowKey === rowKey,
+          );
           return {
             installedVersions:
               idx === -1
                 ? [...state.installedVersions, optimistic]
                 : state.installedVersions.map((item) =>
-                  item.rowKey === rowKey ? { ...item, downloadState: "downloading" } : item,
-                ),
+                    item.rowKey === rowKey
+                      ? { ...item, downloadState: "downloading" }
+                      : item,
+                  ),
             downloadProgress: { ...state.downloadProgress, [rowKey]: 0 },
-            ensureStage: options?.ensureFlow ? "downloading" : state.ensureStage,
+            ensureStage: options?.ensureFlow
+              ? "downloading"
+              : state.ensureStage,
             ensureMessage: options?.ensureFlow
               ? `downloading FFmpeg ${remote.version}`
               : state.ensureMessage,
-            ensureTargetRowKey: options?.ensureFlow ? rowKey : state.ensureTargetRowKey,
+            ensureTargetRowKey: options?.ensureFlow
+              ? rowKey
+              : state.ensureTargetRowKey,
           };
         });
 
@@ -223,7 +239,10 @@ export const useFfmpegStore = create<FfmpegStore>()(
               ? Math.max(0, Math.min(100, Math.round(payload.percent)))
               : 0;
             set((state) => ({
-              downloadProgress: { ...state.downloadProgress, [rowKey]: percent },
+              downloadProgress: {
+                ...state.downloadProgress,
+                [rowKey]: percent,
+              },
               ensureMessage:
                 options?.ensureFlow && state.ensureTargetRowKey === rowKey
                   ? `\u6b63\u5728\u4e0b\u8f7d FFmpeg ${percent}%`
@@ -233,7 +252,9 @@ export const useFfmpegStore = create<FfmpegStore>()(
 
           if (options?.autoActivate) {
             set((state) => ({
-              ensureStage: options?.ensureFlow ? "activating" : state.ensureStage,
+              ensureStage: options?.ensureFlow
+                ? "activating"
+                : state.ensureStage,
               ensureMessage: options?.ensureFlow
                 ? "download completed, activating..."
                 : state.ensureMessage,
@@ -244,11 +265,18 @@ export const useFfmpegStore = create<FfmpegStore>()(
           await Promise.all([get().refreshAll(), get().refreshRuntime()]);
           set((state) => ({
             ensureStage: options?.ensureFlow ? "ready" : state.ensureStage,
-            ensureMessage: options?.ensureFlow ? "FFmpeg is ready" : state.ensureMessage,
-            ensureTargetRowKey: options?.ensureFlow ? null : state.ensureTargetRowKey,
+            ensureMessage: options?.ensureFlow
+              ? "FFmpeg is ready"
+              : state.ensureMessage,
+            ensureTargetRowKey: options?.ensureFlow
+              ? null
+              : state.ensureTargetRowKey,
           }));
         } catch (error) {
-          const reason = error instanceof Error ? error.message : String(error ?? "unknown error");
+          const reason =
+            error instanceof Error
+              ? error.message
+              : String(error ?? "unknown error");
           const canceled = reason.toLowerCase().includes("cancel");
           if (!canceled) {
             await bridge.updateFfmpegDownloadState(rowKey, "failed");
@@ -281,18 +309,22 @@ export const useFfmpegStore = create<FfmpegStore>()(
           await bridge.cancelFfmpegDownload(rowKey);
           set((state) => ({
             installedVersions: state.installedVersions.filter(
-              (item) => !(item.rowKey === rowKey && !item.installed && !item.isActive),
+              (item) =>
+                !(item.rowKey === rowKey && !item.installed && !item.isActive),
             ),
             ensureStage:
-              state.ensureStage === "downloading" && state.ensureTargetRowKey === rowKey
+              state.ensureStage === "downloading" &&
+              state.ensureTargetRowKey === rowKey
                 ? "idle"
                 : state.ensureStage,
             ensureMessage:
-              state.ensureStage === "downloading" && state.ensureTargetRowKey === rowKey
+              state.ensureStage === "downloading" &&
+              state.ensureTargetRowKey === rowKey
                 ? "download canceled"
                 : state.ensureMessage,
             ensureTargetRowKey:
-              state.ensureStage === "downloading" && state.ensureTargetRowKey === rowKey
+              state.ensureStage === "downloading" &&
+              state.ensureTargetRowKey === rowKey
                 ? null
                 : state.ensureTargetRowKey,
           }));
@@ -306,11 +338,16 @@ export const useFfmpegStore = create<FfmpegStore>()(
         }
       },
 
-      activateVersion: async (rowKey: string, options?: { quietEnsure?: boolean }) => {
+      activateVersion: async (
+        rowKey: string,
+        options?: { quietEnsure?: boolean },
+      ) => {
         set((state) => ({
           busyRowKey: rowKey,
           ensureStage:
-            state.ensureStage !== "ready" && !options?.quietEnsure ? "activating" : state.ensureStage,
+            state.ensureStage !== "ready" && !options?.quietEnsure
+              ? "activating"
+              : state.ensureStage,
           ensureMessage:
             state.ensureStage !== "ready" && !options?.quietEnsure
               ? "activating FFmpeg..."
@@ -324,7 +361,10 @@ export const useFfmpegStore = create<FfmpegStore>()(
           }
         } catch (error) {
           if (!options?.quietEnsure) {
-            const reason = error instanceof Error ? error.message : String(error ?? "unknown error");
+            const reason =
+              error instanceof Error
+                ? error.message
+                : String(error ?? "unknown error");
             set({
               ensureStage: "error",
               ensureMessage: `activate failed: ${reason}`,
@@ -348,7 +388,11 @@ export const useFfmpegStore = create<FfmpegStore>()(
 
       ensureReadyForHome: async () => {
         const stage = get().ensureStage;
-        if (stage === "checking" || stage === "downloading" || stage === "activating") {
+        if (
+          stage === "checking" ||
+          stage === "downloading" ||
+          stage === "activating"
+        ) {
           return;
         }
 
@@ -386,7 +430,9 @@ export const useFfmpegStore = create<FfmpegStore>()(
             (item) => item.downloadState === "downloading",
           );
           const downloadingRowKey =
-            Object.keys(get().downloadProgress)[0] || downloadingInstalled?.rowKey || null;
+            Object.keys(get().downloadProgress)[0] ||
+            downloadingInstalled?.rowKey ||
+            null;
           if (downloadingRowKey) {
             set({
               ensureStage: "downloading",
@@ -411,7 +457,10 @@ export const useFfmpegStore = create<FfmpegStore>()(
             silentError: true,
           });
         } catch (error) {
-          const reason = error instanceof Error ? error.message : String(error ?? "unknown error");
+          const reason =
+            error instanceof Error
+              ? error.message
+              : String(error ?? "unknown error");
           set({
             ensureStage: "error",
             ensureMessage: `FFmpeg failed: ${reason}`,

@@ -93,6 +93,8 @@ export function FfmpegRuntimeStatus({ showDetails = false }: FfmpegRuntimeStatus
   const ensureDetailMessage =
     ffmpegEnsureMessage?.trim() || getEnsureDetailMessage(ffmpegEnsureStage, t, ffmpegEnsureProgress);
 
+  console.log("ffmpegEnsureStage", ffmpegEnsureStage, badge);
+
   return (
     <div className="flex gap-2">
       <Tooltip>

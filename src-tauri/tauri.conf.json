@@ -28,9 +28,7 @@
     "security": {
       "assetProtocol": {
         "enable": true,
-        "scope": [
-          "$CACHE/**"
-        ]
+        "scope": ["$CACHE/**"]
       },
       "csp": null
     }
@@ -38,29 +36,19 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": [
-          "easyFF"
-        ]
+        "schemes": ["easyFF"]
       }
     },
     "updater": {
-      "endpoints": [
-        "https://avi.2342342.xyz/api/app/latest"
-      ],
+      "endpoints": ["https://avi.2342342.xyz/api/app/latest"],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQyOUY0M0NDRjE0NzNBNkIKUldSck9rZnh6RU9mMG1YM0pkeVRON3JnY0hHQXFUUzRLZ1BxbkpqMUtGZThSRmk1eldXYTNjKzcK"
     }
   },
   "bundle": {
     "active": true,
     "createUpdaterArtifacts": true,
-    "targets": [
-      "app",
-      "dmg",
-      "msi"
-    ],
-    "resources": {
-      "resources/ffmpeg": "resources/ffmpeg"
-    },
+    "targets": ["app", "dmg", "msi"],
+    "resources": {},
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

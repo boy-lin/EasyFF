@@ -360,6 +360,21 @@ pub async fn activate(row_key: &str) -> Result<()> {
     Ok(())
 }
 
+pub async fn deactivate_all() -> Result<()> {
+    let pool = get_db().await?;
+    sqlx::query(
+        r#"
+        UPDATE ffmpeg_versions
+        SET is_active = 0, updated_at = ?1
+        WHERE installed = 1 AND is_active = 1
+        "#,
+    )
+    .bind(get_millis())
+    .execute(&pool)
+    .await?;
+    Ok(())
+}
+
 pub async fn remove_installation(row_key: &str) -> Result<()> {
     let pool = get_db().await?;
     let affected = sqlx::query(

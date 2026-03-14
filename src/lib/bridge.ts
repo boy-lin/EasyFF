@@ -1021,7 +1021,9 @@ class Bridge {
   async createFavoriteCommand(
     input: CreateFavoriteCommandInput,
   ): Promise<FavoriteCommandItem> {
-    return this.invoke<FavoriteCommandItem>("create_favorite_command", { input });
+    return this.invoke<FavoriteCommandItem>("create_favorite_command", {
+      input,
+    });
   }
 
   async deleteFavoriteCommand(id: string): Promise<void> {
@@ -1033,18 +1035,28 @@ class Bridge {
     offset?: number;
     includeDeleted?: boolean;
   }): Promise<FavoriteCommandItem[]> {
-    return this.invoke<FavoriteCommandItem[]>("list_favorite_commands_for_sync", {
-      query,
-    });
+    return this.invoke<FavoriteCommandItem[]>(
+      "list_favorite_commands_for_sync",
+      {
+        query,
+      },
+    );
   }
 
-  async listPendingFavoriteCommandSync(limit: number = 200): Promise<FavoriteCommandItem[]> {
-    return this.invoke<FavoriteCommandItem[]>("list_pending_favorite_command_sync", {
-      limit,
-    });
+  async listPendingFavoriteCommandSync(
+    limit: number = 200,
+  ): Promise<FavoriteCommandItem[]> {
+    return this.invoke<FavoriteCommandItem[]>(
+      "list_pending_favorite_command_sync",
+      {
+        limit,
+      },
+    );
   }
 
-  async applyRemoteFavoriteCommandChanges(items: FavoriteCommandItem[]): Promise<number> {
+  async applyRemoteFavoriteCommandChanges(
+    items: FavoriteCommandItem[],
+  ): Promise<number> {
     return this.invoke<number>("apply_remote_favorite_command_changes", {
       input: { items },
     });

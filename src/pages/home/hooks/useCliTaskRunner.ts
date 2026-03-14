@@ -13,7 +13,7 @@ type ExecuteOptions = {
   commandText: string;
   inputPaths: string[];
   outputDir: string;
-  resolveExecutable: () => Promise<string>;
+  executable: string;
 };
 
 export function useCliTaskRunner(setStatus: SetStatus) {
@@ -76,14 +76,18 @@ export function useCliTaskRunner(setStatus: SetStatus) {
   }, []);
 
   const execute = useCallback(
-    async ({ commandText, inputPaths, outputDir, resolveExecutable }: ExecuteOptions) => {
+    async ({ commandText, inputPaths, outputDir, executable }: ExecuteOptions) => {
       const tokens = splitCommand(commandText);
       if (tokens.length === 0) {
         setStatus({ text: "命令不能为空", kind: "warning" });
         return;
       }
 
-      const command = await resolveExecutable();
+      const command = executable.trim();
+      if (!command) {
+        setStatus({ text: "FFmpeg 不可用", kind: "warning" });
+        return;
+      }
       const args = tokens[0]?.startsWith("-") ? tokens : tokens.slice(1);
       const taskId = `cli-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
@@ -118,4 +122,3 @@ export function useCliTaskRunner(setStatus: SetStatus) {
     lastTaskCompleted,
   };
 }
-

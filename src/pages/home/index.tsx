@@ -29,7 +29,7 @@ import { FavoriteCommandList } from "@/pages/home/components/FavoriteCommandList
 import { useFfmpegStore } from "@/stores/ffmpegStore";
 import { useFavoriteSyncStore } from "@/stores/favoriteSyncStore";
 import { FfmpegRuntimeStatus } from "@/components/ffmpeg/FfmpegRuntimeStatus";
-import { VirtualLogViewer } from "@/components/logs/VirtualLogViewer";
+import { VirtualLogViewer } from "@/components/cli-logs/VirtualLogViewer";
 import { buildCommandText } from "@/pages/home/lib/commandComposer";
 import { useCliTaskRunner } from "@/pages/home/hooks/useCliTaskRunner";
 import { useTranslation } from "react-i18next";
@@ -43,7 +43,7 @@ export default function Home() {
   const { t } = useTranslation("ffmpeg");
   const [searchParams, setSearchParams] = useSearchParams();
   const [commandText, setCommandText] = useState<string>(
-    t("homePage.defaultCommand"),
+    "ffmpeg -i input.mp4 -vn -c:a libmp3lame -q:a 2 output.mp3"
   );
   const [inputPaths, setInputPaths] = useState<string[]>([]);
   const [resolvedOutputPath, setResolvedOutputPath] = useState<string>("");
@@ -59,6 +59,7 @@ export default function Home() {
   const settingsLoading = useSettingsStore((s) => s.isLoading);
   const initSettings = useSettingsStore((s) => s.init);
   const setOutputPath = useSettingsStore((s) => s.setOutputPath);
+  const ffmpegRuntimeVersion = useFfmpegStore((s) => s.runtimeVersion);
   const ffmpegExecutablePath = useFfmpegStore((s) => s.runtimeExecutablePath);
   const ffmpegInstalled = useFfmpegStore((s) => s.installedVersions);
   const ffmpegEnsureStage = useFfmpegStore((s) => s.ensureStage);
@@ -174,28 +175,13 @@ export default function Home() {
     setResolvedOutputPath(rebuilt.outputPath);
   };
 
-  const isGlobalFfmpegCommand = (value: string): boolean => {
-    const v = value.trim().toLowerCase();
-    return v === "ffmpeg" || v === "ffmpeg.exe";
-  };
-
-  const resolveActiveFfmpegExecutable = async (): Promise<string> => {
-    try {
-      const active = ffmpegInstalled.find((item) => item.isActive && !!item.localPath?.trim());
-      if (active?.localPath?.trim()) return active.localPath.trim();
-
-      if (ffmpegExecutablePath?.trim() && !isGlobalFfmpegCommand(ffmpegExecutablePath)) {
-        return ffmpegExecutablePath.trim();
-      }
-
-      const runtime = await bridge.getCurrentFfmpegRuntimeInfo();
-      if (runtime.executablePath?.trim() && !isGlobalFfmpegCommand(runtime.executablePath)) {
-        return runtime.executablePath.trim();
-      }
-    } catch (error) {
-      console.warn("resolve active ffmpeg failed:", error);
+  const resolveActiveFfmpegExecutable = (): string => {
+    const active = ffmpegInstalled.find((item) => item.isActive && !!item.localPath?.trim());
+    if (active?.localPath?.trim()) return active.localPath.trim();
+    if (ffmpegRuntimeVersion !== "unknown" && ffmpegExecutablePath?.trim()) {
+      return ffmpegExecutablePath.trim();
     }
-    throw new Error(t("homePage.toast.ffmpeg_not_ready"));
+    return "";
   };
 
   const handleExecute = async () => {
@@ -218,7 +204,7 @@ export default function Home() {
       commandText,
       inputPaths,
       outputDir,
-      resolveExecutable: resolveActiveFfmpegExecutable,
+      executable: resolveActiveFfmpegExecutable(),
     });
   };
 

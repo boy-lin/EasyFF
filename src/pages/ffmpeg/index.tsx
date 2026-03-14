@@ -16,7 +16,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "sonner";
 import { type FfmpegVersionItem } from "@/lib/bridge";
 import { type FfmpegRemoteVersion, useFfmpegStore } from "@/stores/ffmpegStore";
-import { FfmpegRuntimeStatus } from "@/components/ffmpeg/FfmpegRuntimeStatus";
 import { useTranslation } from "react-i18next";
 
 const formatOsLabel = (os: string | null | undefined, t: (key: string) => string): string => {
@@ -75,6 +74,8 @@ const getRemoteStatusMeta = (
   }
   return { text: t("status.remote.not_downloaded"), className: "bg-slate-500 text-white hover:bg-slate-500" };
 };
+
+const isSystemFfmpegRow = (item: FfmpegVersionItem): boolean => item.rowKey === "__system_ffmpeg__";
 
 export default function FFmpegVersionManagerPage() {
   const { t } = useTranslation("ffmpeg");
@@ -260,6 +261,7 @@ export default function FFmpegVersionManagerPage() {
               const downloading =
                 item.downloadState === "downloading" || downloadProgress[item.rowKey] !== undefined;
               const canceling = cancelingRowKey === item.rowKey;
+              const isSystemItem = isSystemFfmpegRow(item);
               const status = getInstalledStatusMeta(item, downloading, t);
               return (
                 <div
@@ -301,7 +303,7 @@ export default function FFmpegVersionManagerPage() {
                       <Button
                         size="sm"
                         variant="destructive"
-                        disabled={busy || item.isActive}
+                        disabled={busy || item.isActive || isSystemItem}
                         onClick={() => handleDelete(item.rowKey)}
                       >
                         {t("actions.delete")}

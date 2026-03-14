@@ -9,6 +9,95 @@ use tauri::command;
 use tauri::ipc::JavaScriptChannelId;
 use tauri::{AppHandle, Emitter, State};
 
+fn detect_host_os() -> String {
+    if cfg!(target_os = "windows") {
+        "windows".to_string()
+    } else if cfg!(target_os = "macos") {
+        "macos".to_string()
+    } else {
+        "linux".to_string()
+    }
+}
+
+fn parse_ffmpeg_semver(version_line: &str) -> String {
+    let mut parts = version_line.split_whitespace();
+    while let Some(part) = parts.next() {
+        if part == "version" {
+            return parts
+                .next()
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+                .unwrap_or_else(|| version_line.trim().to_string());
+        }
+    }
+    version_line.trim().to_string()
+}
+
+fn probe_ffmpeg_binary(bin: &str) -> Option<(String, String)> {
+    let output = Command::new(bin).arg("-version").output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let first_line = stdout.lines().next()?.trim();
+    if first_line.is_empty() {
+        return None;
+    }
+    Some((first_line.to_string(), bin.to_string()))
+}
+
+fn probe_global_ffmpeg() -> Option<(String, String)> {
+    let mut candidates: Vec<&str> = Vec::new();
+    if cfg!(target_os = "windows") {
+        candidates.push("ffmpeg.exe");
+    }
+    candidates.push("ffmpeg");
+
+    for bin in candidates {
+        if let Some(result) = probe_ffmpeg_binary(bin) {
+            return Some(result);
+        }
+    }
+    None
+}
+
+async fn list_installed_ffmpeg_versions_with_system(
+) -> Result<Vec<crate::storage::ffmpeg_versions::FfmpegVersionItem>, String> {
+    let mut installed = crate::storage::ffmpeg_versions::list_installed()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let has_active = installed.iter().any(|item| item.is_active);
+    let has_system_row = installed
+        .iter()
+        .any(|item| item.row_key == "__system_ffmpeg__");
+
+    let system_probe = tauri::async_runtime::spawn_blocking(probe_global_ffmpeg)
+        .await
+        .map_err(|e| format!("[JOIN:list_installed_ffmpeg_versions] {}", e))?;
+
+    if !has_system_row {
+        if let Some((display_version, executable_path)) = system_probe {
+            installed.push(crate::storage::ffmpeg_versions::FfmpegVersionItem {
+                row_key: "__system_ffmpeg__".to_string(),
+                source: "System".to_string(),
+                os: detect_host_os(),
+                version: parse_ffmpeg_semver(display_version.as_str()),
+                published_at: None,
+                download_url: None,
+                arch: Some(std::env::consts::ARCH.to_string()),
+                local_path: Some(executable_path),
+                updated_at: 0,
+                download_state: "downloaded".to_string(),
+                installed: true,
+                is_active: !has_active,
+            });
+        }
+    }
+
+    Ok(installed)
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct ClientLogInput {
     pub level: String,
@@ -318,19 +407,35 @@ pub struct MyFileItem {
 }
 
 #[command]
-pub async fn report_client_log(_log: ClientLogInput) -> Result<(), String> { Err("command disabled".to_string()) }
+pub async fn report_client_log(_log: ClientLogInput) -> Result<(), String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn export_logs_archive(_app: AppHandle) -> Result<String, String> { Err("command disabled".to_string()) }
+pub async fn export_logs_archive(_app: AppHandle) -> Result<String, String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn get_detailed_media_info(_path: String) -> Result<MediaDetails, String> { Err("command disabled".to_string()) }
+pub async fn get_detailed_media_info(_path: String) -> Result<MediaDetails, String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn get_detailed_image_info(_path: String) -> Result<MediaDetails, String> { Err("command disabled".to_string()) }
+pub async fn get_detailed_image_info(_path: String) -> Result<MediaDetails, String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn get_detailed_media_info_batch(_paths: Vec<String>) -> Result<Vec<MediaDetails>, String> { Err("command disabled".to_string()) }
+pub async fn get_detailed_media_info_batch(
+    _paths: Vec<String>,
+) -> Result<Vec<MediaDetails>, String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn probe_media_info(_path: String) -> Result<MediaProbeResult, String> { Err("command disabled".to_string()) }
+pub async fn probe_media_info(_path: String) -> Result<MediaProbeResult, String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn probe_media_info_batch(_paths: Vec<String>) -> Result<Vec<MediaProbeResult>, String> { Err("command disabled".to_string()) }
+pub async fn probe_media_info_batch(_paths: Vec<String>) -> Result<Vec<MediaProbeResult>, String> {
+    Err("command disabled".to_string())
+}
 #[command]
 pub async fn cli_task_submit(
     app: AppHandle,
@@ -359,7 +464,9 @@ pub async fn media_task_cancel_task(id: String) -> Result<(), String> {
     crate::task::queue::cancel_task(id).await
 }
 #[command]
-pub async fn run_self_check() -> Result<SelfCheckResult, String> { Err("command disabled".to_string()) }
+pub async fn run_self_check() -> Result<SelfCheckResult, String> {
+    Err("command disabled".to_string())
+}
 #[command]
 pub async fn get_device_id() -> Result<String, String> {
     machine_uid::get().map_err(|e| format!("failed to get device id: {}", e))
@@ -416,11 +523,7 @@ pub async fn auth_exchange_code(input: AuthExchangeCodeInput) -> Result<AuthToke
                 .unwrap_or("token endpoint returned non-success status");
             return Err(format!("token exchange failed: {} ({})", err, status));
         }
-        return Err(format!(
-            "token exchange failed: http {} {}",
-            status,
-            body
-        ));
+        return Err(format!("token exchange failed: http {} {}", status, body));
     }
 
     let value = serde_json::from_str::<serde_json::Value>(&body)
@@ -452,73 +555,204 @@ pub async fn auth_exchange_code(input: AuthExchangeCodeInput) -> Result<AuthToke
     ))
 }
 #[command]
-pub async fn updater_guard_report_success() -> Result<UpdaterGuardStatus, String> { Err("command disabled".to_string()) }
+pub async fn updater_guard_report_success() -> Result<UpdaterGuardStatus, String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn updater_guard_report_failure(_reason: Option<String>) -> Result<UpdaterGuardStatus, String> { Err("command disabled".to_string()) }
+pub async fn updater_guard_report_failure(
+    _reason: Option<String>,
+) -> Result<UpdaterGuardStatus, String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn updater_guard_get_status() -> Result<UpdaterGuardStatus, String> { Err("command disabled".to_string()) }
+pub async fn updater_guard_get_status() -> Result<UpdaterGuardStatus, String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn updater_guard_reset() -> Result<(), String> { Err("command disabled".to_string()) }
+pub async fn updater_guard_reset() -> Result<(), String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn check_hardware_acceleration() -> Result<HardwareSupport, String> { Err("command disabled".to_string()) }
+pub async fn check_hardware_acceleration() -> Result<HardwareSupport, String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn get_media_info(_path: String) -> Result<FileInfo, String> { Err("command disabled".to_string()) }
+pub async fn get_media_info(_path: String) -> Result<FileInfo, String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn prepare_video_for_web_playback(_path: String) -> Result<WebPlaybackPrepareResult, String> { Err("command disabled".to_string()) }
+pub async fn prepare_video_for_web_playback(
+    _path: String,
+) -> Result<WebPlaybackPrepareResult, String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn video_mse_stream_open(_app: AppHandle, _path: String, _chunk_channel: JavaScriptChannelId, _stream_state: State<'_, VideoMseStreamState>) -> Result<(), String> { Err("command disabled".to_string()) }
+pub async fn video_mse_stream_open(
+    _app: AppHandle,
+    _path: String,
+    _chunk_channel: JavaScriptChannelId,
+    _stream_state: State<'_, VideoMseStreamState>,
+) -> Result<(), String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn video_mse_stream_close(_stream_state: State<'_, VideoMseStreamState>) -> Result<(), String> { Err("command disabled".to_string()) }
+pub async fn video_mse_stream_close(
+    _stream_state: State<'_, VideoMseStreamState>,
+) -> Result<(), String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn video_player_open(_app: AppHandle, _path: String, _preview: Option<PreviewSize>, _frame_channel: Option<JavaScriptChannelId>, _player_state: State<'_, PlayerState>) -> Result<(), String> { Err("command disabled".to_string()) }
+pub async fn video_player_open(
+    _app: AppHandle,
+    _path: String,
+    _preview: Option<PreviewSize>,
+    _frame_channel: Option<JavaScriptChannelId>,
+    _player_state: State<'_, PlayerState>,
+) -> Result<(), String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn video_player_play(_player_state: State<'_, PlayerState>) -> Result<(), String> { Err("command disabled".to_string()) }
+pub async fn video_player_play(_player_state: State<'_, PlayerState>) -> Result<(), String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn video_player_get_size(_player_state: State<'_, PlayerState>) -> Result<(u32, u32), String> { Err("command disabled".to_string()) }
+pub async fn video_player_get_size(
+    _player_state: State<'_, PlayerState>,
+) -> Result<(u32, u32), String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn video_player_pause(_player_state: State<'_, PlayerState>) -> Result<(), String> { Err("command disabled".to_string()) }
+pub async fn video_player_pause(_player_state: State<'_, PlayerState>) -> Result<(), String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn video_player_seek(_position: f64, _player_state: State<'_, PlayerState>) -> Result<(), String> { Err("command disabled".to_string()) }
+pub async fn video_player_seek(
+    _position: f64,
+    _player_state: State<'_, PlayerState>,
+) -> Result<(), String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn video_player_get_position(_player_state: State<'_, PlayerState>) -> Result<f64, String> { Err("command disabled".to_string()) }
+pub async fn video_player_get_position(
+    _player_state: State<'_, PlayerState>,
+) -> Result<f64, String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn video_player_get_duration(_player_state: State<'_, PlayerState>) -> Result<f64, String> { Err("command disabled".to_string()) }
+pub async fn video_player_get_duration(
+    _player_state: State<'_, PlayerState>,
+) -> Result<f64, String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn video_player_close(_player_state: State<'_, PlayerState>) -> Result<(), String> { Err("command disabled".to_string()) }
+pub async fn video_player_close(_player_state: State<'_, PlayerState>) -> Result<(), String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn video_player_set_volume(_volume: f32, _player_state: State<'_, PlayerState>) -> Result<(), String> { Err("command disabled".to_string()) }
+pub async fn video_player_set_volume(
+    _volume: f32,
+    _player_state: State<'_, PlayerState>,
+) -> Result<(), String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn audio_player_open(_app: AppHandle, _path: String, _audio_player_state: State<'_, AudioPlayerState>) -> Result<String, String> { Err("command disabled".to_string()) }
+pub async fn audio_player_open(
+    _app: AppHandle,
+    _path: String,
+    _audio_player_state: State<'_, AudioPlayerState>,
+) -> Result<String, String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn audio_player_play(_audio_player_state: State<'_, AudioPlayerState>) -> Result<(), String> { Err("command disabled".to_string()) }
+pub async fn audio_player_play(
+    _audio_player_state: State<'_, AudioPlayerState>,
+) -> Result<(), String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn audio_player_pause(_audio_player_state: State<'_, AudioPlayerState>) -> Result<(), String> { Err("command disabled".to_string()) }
+pub async fn audio_player_pause(
+    _audio_player_state: State<'_, AudioPlayerState>,
+) -> Result<(), String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn audio_player_seek(_position: f64, _audio_player_state: State<'_, AudioPlayerState>) -> Result<(), String> { Err("command disabled".to_string()) }
+pub async fn audio_player_seek(
+    _position: f64,
+    _audio_player_state: State<'_, AudioPlayerState>,
+) -> Result<(), String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn audio_player_stop(_audio_player_state: State<'_, AudioPlayerState>) -> Result<(), String> { Err("command disabled".to_string()) }
+pub async fn audio_player_stop(
+    _audio_player_state: State<'_, AudioPlayerState>,
+) -> Result<(), String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn audio_player_set_volume(_volume: f32, _audio_player_state: State<'_, AudioPlayerState>) -> Result<(), String> { Err("command disabled".to_string()) }
+pub async fn audio_player_set_volume(
+    _volume: f32,
+    _audio_player_state: State<'_, AudioPlayerState>,
+) -> Result<(), String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn audio_player_get_position(_audio_player_state: State<'_, AudioPlayerState>) -> Result<f64, String> { Err("command disabled".to_string()) }
+pub async fn audio_player_get_position(
+    _audio_player_state: State<'_, AudioPlayerState>,
+) -> Result<f64, String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn audio_player_get_duration(_audio_player_state: State<'_, AudioPlayerState>) -> Result<f64, String> { Err("command disabled".to_string()) }
+pub async fn audio_player_get_duration(
+    _audio_player_state: State<'_, AudioPlayerState>,
+) -> Result<f64, String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn get_audio_file_info(_path: String) -> Result<serde_json::Value, String> { Err("command disabled".to_string()) }
+pub async fn get_audio_file_info(_path: String) -> Result<serde_json::Value, String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn convert_audio_file(_app: AppHandle, _args: AudioConversionArgs) -> Result<(), String> { Err("command disabled".to_string()) }
+pub async fn convert_audio_file(_app: AppHandle, _args: AudioConversionArgs) -> Result<(), String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn convert_gif_file(_app: AppHandle, _args: GifConversionArgs) -> Result<(), String> { Err("command disabled".to_string()) }
+pub async fn convert_gif_file(_app: AppHandle, _args: GifConversionArgs) -> Result<(), String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn generate_media_thumbnail(_window: tauri::Window, _request_id: String, _path: String, _options: Option<serde_json::Value>) -> Result<(), String> { Err("command disabled".to_string()) }
+pub async fn generate_media_thumbnail(
+    _window: tauri::Window,
+    _request_id: String,
+    _path: String,
+    _options: Option<serde_json::Value>,
+) -> Result<(), String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn compress_video_file(_app: AppHandle, _args: VideoCompressionArgs) -> Result<(), String> { Err("command disabled".to_string()) }
+pub async fn compress_video_file(
+    _app: AppHandle,
+    _args: VideoCompressionArgs,
+) -> Result<(), String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn compress_audio_file(_app: AppHandle, _args: AudioCompressionArgs) -> Result<(), String> { Err("command disabled".to_string()) }
+pub async fn compress_audio_file(
+    _app: AppHandle,
+    _args: AudioCompressionArgs,
+) -> Result<(), String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn compress_image_file(_app: AppHandle, _args: ImageCompressionArgs) -> Result<(), String> { Err("command disabled".to_string()) }
+pub async fn compress_image_file(
+    _app: AppHandle,
+    _args: ImageCompressionArgs,
+) -> Result<(), String> {
+    Err("command disabled".to_string())
+}
 #[command]
-pub async fn write_media_metadata(_args: WriteMetadataArgs) -> Result<(), String> { Err("command disabled".to_string()) }
+pub async fn write_media_metadata(_args: WriteMetadataArgs) -> Result<(), String> {
+    Err("command disabled".to_string())
+}
 #[command]
 pub async fn get_task_history(
     limit: Option<u32>,
@@ -724,6 +958,32 @@ fn extract_tar_xz(archive_path: &Path, target_dir: &Path) -> Result<(), String> 
     archive.unpack(target_dir).map_err(|e| e.to_string())
 }
 
+fn extract_gz(archive_path: &Path, target_dir: &Path) -> Result<(), String> {
+    let file = File::open(archive_path).map_err(|e| e.to_string())?;
+    let mut decoder = flate2::read::GzDecoder::new(file);
+    let binary_name = if cfg!(target_os = "windows") {
+        "ffmpeg.exe"
+    } else {
+        "ffmpeg"
+    };
+    let output_path = target_dir.join(binary_name);
+    let mut output = File::create(&output_path).map_err(|e| e.to_string())?;
+    std::io::copy(&mut decoder, &mut output).map_err(|e| e.to_string())?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut perms = fs::metadata(&output_path)
+            .map_err(|e| e.to_string())?
+            .permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&output_path, perms).map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
 fn extract_7z_with_system(archive_path: &Path, target_dir: &Path) -> Result<(), String> {
     let output_arg = format!("-o{}", target_dir.to_string_lossy());
     for bin in ["7z", "7za"] {
@@ -803,13 +1063,16 @@ fn resolve_ffmpeg_binary_from_download(
         extract_zip(archive_path, &extract_dir)?;
     } else if file_name.ends_with(".tar.xz") || file_name.ends_with(".txz") {
         extract_tar_xz(archive_path, &extract_dir)?;
+    } else if file_name.ends_with(".gz") {
+        extract_gz(archive_path, &extract_dir)?;
     } else if file_name.ends_with(".7z") {
         extract_7z_with_system(archive_path, &extract_dir)?;
     } else {
         return Err(format!("unsupported archive format: {}", file_name));
     }
 
-    find_ffmpeg_binary(&extract_dir).ok_or_else(|| "ffmpeg executable not found after extraction".to_string())
+    find_ffmpeg_binary(&extract_dir)
+        .ok_or_else(|| "ffmpeg executable not found after extraction".to_string())
 }
 
 #[command]
@@ -852,7 +1115,6 @@ pub async fn list_ffmpeg_versions(
     });
 
     let arch = q.arch.or_else(|| Some(detect_host_arch()));
-
     crate::storage::ffmpeg_versions::list(
         None,
         q.os,
@@ -868,9 +1130,7 @@ pub async fn list_ffmpeg_versions(
 #[command]
 pub async fn list_installed_ffmpeg_versions(
 ) -> Result<Vec<crate::storage::ffmpeg_versions::FfmpegVersionItem>, String> {
-    crate::storage::ffmpeg_versions::list_installed()
-        .await
-        .map_err(|e| e.to_string())
+    list_installed_ffmpeg_versions_with_system().await
 }
 
 #[command]
@@ -894,87 +1154,88 @@ pub async fn download_ffmpeg_version(app: AppHandle, row_key: String) -> Result<
     let app_handle = app.clone();
     let row_key_cloned = row_key.clone();
     let item_cloned = item.clone();
-    let download_result = tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
-        let mut target_dir: PathBuf =
-            dirs::data_local_dir().unwrap_or_else(|| std::env::temp_dir());
-        target_dir.push("easyff");
-        target_dir.push("ffmpeg");
-        fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
+    let download_result =
+        tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
+            let mut target_dir: PathBuf =
+                dirs::data_local_dir().unwrap_or_else(|| std::env::temp_dir());
+            target_dir.push("easyff");
+            target_dir.push("ffmpeg");
+            fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
 
-        let filename = infer_download_name(&item_cloned);
-        let target_path = target_dir.join(filename);
+            let filename = infer_download_name(&item_cloned);
+            let target_path = target_dir.join(filename);
 
-        let client = reqwest::blocking::Client::new();
-        let mut response = client.get(url.as_str()).send().map_err(|e| e.to_string())?;
-        if !response.status().is_success() {
-            return Err(format!("download failed with status {}", response.status()));
-        }
-
-        let total = response.content_length();
-        let mut file = File::create(&target_path).map_err(|e| e.to_string())?;
-        let mut downloaded = 0_u64;
-        let mut buf = [0_u8; 32 * 1024];
-
-        let _ = app_handle.emit(
-            "ffmpeg-download-progress",
-            FfmpegDownloadProgressEvent {
-                row_key: row_key_cloned.clone(),
-                downloaded: 0,
-                total,
-                percent: 0.0,
-                status: "downloading".to_string(),
-            },
-        );
-
-        loop {
-            let is_canceled = CANCELED_FFMPEG_DOWNLOADS
-                .lock()
-                .map(|set| set.contains(row_key_cloned.as_str()))
-                .unwrap_or(false);
-            if is_canceled {
-                let _ = fs::remove_file(&target_path);
-                return Err("download canceled".to_string());
+            let client = reqwest::blocking::Client::new();
+            let mut response = client.get(url.as_str()).send().map_err(|e| e.to_string())?;
+            if !response.status().is_success() {
+                return Err(format!("download failed with status {}", response.status()));
             }
-            let n = response.read(&mut buf).map_err(|e| e.to_string())?;
-            if n == 0 {
-                break;
+
+            let total = response.content_length();
+            let mut file = File::create(&target_path).map_err(|e| e.to_string())?;
+            let mut downloaded = 0_u64;
+            let mut buf = [0_u8; 32 * 1024];
+
+            let _ = app_handle.emit(
+                "ffmpeg-download-progress",
+                FfmpegDownloadProgressEvent {
+                    row_key: row_key_cloned.clone(),
+                    downloaded: 0,
+                    total,
+                    percent: 0.0,
+                    status: "downloading".to_string(),
+                },
+            );
+
+            loop {
+                let is_canceled = CANCELED_FFMPEG_DOWNLOADS
+                    .lock()
+                    .map(|set| set.contains(row_key_cloned.as_str()))
+                    .unwrap_or(false);
+                if is_canceled {
+                    let _ = fs::remove_file(&target_path);
+                    return Err("download canceled".to_string());
+                }
+                let n = response.read(&mut buf).map_err(|e| e.to_string())?;
+                if n == 0 {
+                    break;
+                }
+                file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+                downloaded += n as u64;
+                let percent = total
+                    .map(|v| (downloaded as f64 * 100.0 / v as f64).min(100.0))
+                    .unwrap_or(0.0);
+                let _ = app_handle.emit(
+                    "ffmpeg-download-progress",
+                    FfmpegDownloadProgressEvent {
+                        row_key: row_key_cloned.clone(),
+                        downloaded,
+                        total,
+                        percent,
+                        status: "downloading".to_string(),
+                    },
+                );
             }
-            file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
-            downloaded += n as u64;
-            let percent = total
-                .map(|v| (downloaded as f64 * 100.0 / v as f64).min(100.0))
-                .unwrap_or(0.0);
+
             let _ = app_handle.emit(
                 "ffmpeg-download-progress",
                 FfmpegDownloadProgressEvent {
                     row_key: row_key_cloned.clone(),
                     downloaded,
                     total,
-                    percent,
-                    status: "downloading".to_string(),
+                    percent: 100.0,
+                    status: "completed".to_string(),
                 },
             );
-        }
-
-        let _ = app_handle.emit(
-            "ffmpeg-download-progress",
-            FfmpegDownloadProgressEvent {
-                row_key: row_key_cloned.clone(),
-                downloaded,
-                total,
-                percent: 100.0,
-                status: "completed".to_string(),
-            },
-        );
-        let executable = resolve_ffmpeg_binary_from_download(
-            target_path.as_path(),
-            target_dir.as_path(),
-            row_key_cloned.as_str(),
-        )?;
-        Ok(executable.to_string_lossy().to_string())
-    })
-    .await
-    .map_err(|e| format!("[JOIN:download_ffmpeg_version] {}", e))?;
+            let executable = resolve_ffmpeg_binary_from_download(
+                target_path.as_path(),
+                target_dir.as_path(),
+                row_key_cloned.as_str(),
+            )?;
+            Ok(executable.to_string_lossy().to_string())
+        })
+        .await
+        .map_err(|e| format!("[JOIN:download_ffmpeg_version] {}", e))?;
 
     let path = match download_result {
         Ok(path) => path,
@@ -984,7 +1245,8 @@ pub async fn download_ffmpeg_version(app: AppHandle, row_key: String) -> Result<
             } else {
                 "failed"
             };
-            let _ = crate::storage::ffmpeg_versions::set_download_state(row_key.as_str(), state).await;
+            let _ =
+                crate::storage::ffmpeg_versions::set_download_state(row_key.as_str(), state).await;
             return Err(err);
         }
     };
@@ -1026,6 +1288,11 @@ pub async fn activate_ffmpeg_version(row_key: String) -> Result<(), String> {
     if key.is_empty() {
         return Err("row_key is required".to_string());
     }
+    if key == "__system_ffmpeg__" {
+        return crate::storage::ffmpeg_versions::deactivate_all()
+            .await
+            .map_err(|e| e.to_string());
+    }
 
     let item = crate::storage::ffmpeg_versions::get_by_row_key(key.as_str())
         .await
@@ -1055,6 +1322,9 @@ pub async fn activate_ffmpeg_version(row_key: String) -> Result<(), String> {
 
 #[command]
 pub async fn delete_ffmpeg_version(row_key: String) -> Result<(), String> {
+    if row_key.trim() == "__system_ffmpeg__" {
+        return Err("system ffmpeg cannot be deleted from EasyFF".to_string());
+    }
     crate::storage::ffmpeg_versions::remove_installation(row_key.as_str())
         .await
         .map_err(|e| e.to_string())
@@ -1062,9 +1332,7 @@ pub async fn delete_ffmpeg_version(row_key: String) -> Result<(), String> {
 
 #[command]
 pub async fn get_current_ffmpeg_version() -> Result<serde_json::Value, String> {
-    let installed = crate::storage::ffmpeg_versions::list_installed()
-        .await
-        .map_err(|e| e.to_string())?;
+    let installed = list_installed_ffmpeg_versions_with_system().await?;
     let active = installed.iter().find(|v| v.is_active).cloned();
     let table_version = active
         .as_ref()
@@ -1106,17 +1374,8 @@ pub async fn get_current_ffmpeg_version() -> Result<serde_json::Value, String> {
         }
 
         for bin in candidates {
-            let output = Command::new(&bin).arg("-version").output();
-            let Ok(out) = output else { continue };
-            if !out.status.success() {
-                continue;
-            }
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            if let Some(first_line) = stdout.lines().next() {
-                let v = first_line.trim();
-                if !v.is_empty() {
-                    return Some((v.to_string(), bin));
-                }
+            if let Some((version, _)) = probe_ffmpeg_binary(bin.as_str()) {
+                return Some((version, bin));
             }
         }
         None
@@ -1168,7 +1427,10 @@ pub async fn create_favorite_command(
 
     crate::storage::favorite_commands::create(
         title,
-        input.description.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
+        input
+            .description
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty()),
         command,
     )
     .await
@@ -1204,9 +1466,11 @@ pub async fn list_favorite_commands_for_sync(
 pub async fn list_pending_favorite_command_sync(
     limit: Option<u32>,
 ) -> Result<Vec<crate::storage::favorite_commands::FavoriteCommandItem>, String> {
-    crate::storage::favorite_commands::list_pending_sync(limit.unwrap_or(200).clamp(1, 1000) as usize)
-        .await
-        .map_err(|e| e.to_string())
+    crate::storage::favorite_commands::list_pending_sync(
+        limit.unwrap_or(200).clamp(1, 1000) as usize
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[command]
@@ -1233,7 +1497,9 @@ pub async fn get_favorite_command_sync_cursor() -> Result<i64, String> {
 }
 
 #[command]
-pub async fn set_favorite_command_sync_cursor(input: FavoriteSyncCursorInput) -> Result<(), String> {
+pub async fn set_favorite_command_sync_cursor(
+    input: FavoriteSyncCursorInput,
+) -> Result<(), String> {
     crate::storage::favorite_commands::set_sync_cursor(input.cursor)
         .await
         .map_err(|e| e.to_string())

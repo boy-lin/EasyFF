@@ -56,6 +56,7 @@ pub enum SourceKind {
     Btbn,
     JohnVanSickle,
     Evermeet,
+    Eugeneware
 }
 
 impl SourceKind {
@@ -66,6 +67,7 @@ impl SourceKind {
             SourceKind::Btbn => "btbn",
             SourceKind::JohnVanSickle => "johnvansickle",
             SourceKind::Evermeet => "evermeet",
+            SourceKind::Eugeneware => "eugeneware",
         }
     }
 }
@@ -86,7 +88,7 @@ pub fn available_sources(os: HostOs) -> Vec<SourceKind> {
     match os {
         HostOs::Windows => vec![SourceKind::Ling, SourceKind::Gyan, SourceKind::Btbn],
         HostOs::Linux => vec![SourceKind::JohnVanSickle, SourceKind::Btbn],
-        HostOs::Macos => vec![SourceKind::Evermeet, SourceKind::Btbn],
+        HostOs::Macos => vec![SourceKind::Evermeet, SourceKind::Btbn, SourceKind::Eugeneware],
     }
 }
 
@@ -140,8 +142,9 @@ pub fn fetch_versions(
                 "8.0.0",
                 "2026-03-13",
                 "https://s3.tebi.io/tebi.2342342.xyz/static/ffmpeg/mac/ffmpeg-8.0.7z",
-                Some("arm64"),
+                Some("x64"),
             )
+            
         ],
         (SourceKind::Gyan, HostOs::Windows) => vec![
             version_item(
@@ -179,6 +182,16 @@ pub fn fetch_versions(
                 Some("arm64"),
             ),
         ],
+        (SourceKind::Eugeneware, HostOs::Windows) => vec![
+            version_item(
+                SourceKind::Eugeneware,
+                HostOs::Windows,
+                "6.1.1",
+                "2025-11-15",
+                "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-win32-x64.gz",
+                Some("x64"),
+            ),
+        ],
         (SourceKind::Btbn, HostOs::Linux) => vec![
             version_item(
                 SourceKind::Btbn,
@@ -201,19 +214,43 @@ pub fn fetch_versions(
             version_item(
                 SourceKind::JohnVanSickle,
                 HostOs::Linux,
-                "7.1.1",
+                "7.0.2",
                 "2025-11-04",
-                "https://johnvansickle.com/ffmpeg/",
-                Some("x86_64"),
+                "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz",
+                Some("amd64"),
             ),
             version_item(
                 SourceKind::JohnVanSickle,
                 HostOs::Linux,
                 "7.0.2",
-                "2025-08-16",
-                "https://johnvansickle.com/ffmpeg/",
-                Some("x86_64"),
+                "2025-11-04",
+                "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz",
+                Some("arm64"),
             ),
+            version_item(
+                SourceKind::JohnVanSickle,
+                HostOs::Linux,
+                "7.0.2",
+                "2025-11-04",
+                "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-i686-static.tar.xz",
+                Some("i686"),
+            ),
+            version_item(
+                SourceKind::JohnVanSickle,
+                HostOs::Linux,
+                "7.0.2",
+                "2025-11-04",
+                "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-armhf-static.tar.xz",
+                Some("armhf"),
+            ),
+            version_item(
+                SourceKind::JohnVanSickle,
+                HostOs::Linux,
+                "7.0.2",
+                "2025-11-04",
+                "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-armel-static.tar.xz",
+                Some("armel"),
+            )
         ],
         (SourceKind::Evermeet, HostOs::Macos) => vec![
             version_item(
@@ -222,7 +259,7 @@ pub fn fetch_versions(
                 "8.0",
                 "2026-03-12",
                 "https://deolaha.ca/pub/ffmpeg/ffmpeg-8.0.7z",
-                Some("x86_64"),
+                Some("x64"),
             ),
             version_item(
                 SourceKind::Evermeet,
@@ -230,7 +267,7 @@ pub fn fetch_versions(
                 "7.1.1",
                 "2026-03-12",
                 "https://deolaha.ca/pub/ffmpeg/ffmpeg-7.1.1.7z",
-                Some("x86_64"),
+                Some("x64"),
             ),
             version_item(
                 SourceKind::Evermeet,
@@ -238,8 +275,27 @@ pub fn fetch_versions(
                 "6.1.1",
                 "2026-03-12",
                 "https://deolaha.ca/pub/ffmpeg/ffmpeg-6.1.1.7z",
-                Some("x86_64"),
+                Some("x64"),
             ),
+        ],
+        (SourceKind::Eugeneware, HostOs::Macos) => vec![
+            version_item(
+                SourceKind::Eugeneware,
+                HostOs::Macos,
+                "6.1.1",
+                "2025-06-18",
+                "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-darwin-arm64.gz",
+                Some("arm64"),
+            ),
+            version_item(
+                SourceKind::Eugeneware,
+                HostOs::Macos,
+                "6.1.1",
+                "2025-06-18",
+                "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-darwin-x64.gz",
+                Some("x64"),
+            ),
+            
         ],
         _ => Vec::new(),
     };
@@ -327,7 +383,11 @@ pub fn list_versions(
     });
 
     let total = list.len() as u64;
-    let page = list.into_iter().skip(offset).take(limit).collect::<Vec<_>>();
+    let page = list
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .collect::<Vec<_>>();
     let next_offset = (offset + page.len()) as u64;
     FfmpegVersionListResult {
         has_more: next_offset < total,

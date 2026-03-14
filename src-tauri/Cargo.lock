@@ -1226,6 +1226,7 @@ dependencies = [
  "anyhow",
  "cocoa",
  "dirs",
+ "flate2",
  "futures",
  "lazy_static",
  "log",
