@@ -359,7 +359,7 @@ export async function initDesktopOAuthDeepLinkListener() {
 
   await bridge.on("single-instance", async (payload) => {
     const args = payload?.args ?? [];
-    const callbackUrl = args.find((arg) => typeof arg === "string" && arg.startsWith("easyFF://"));
+    const callbackUrl = args.find((arg) => typeof arg === "string" && arg.startsWith("easyff://"));
     if (!callbackUrl) return;
     try {
       await handleDesktopOAuthCallbackUrl(callbackUrl);

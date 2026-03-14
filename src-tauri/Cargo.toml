@@ -1,5 +1,5 @@
 [package]
-name = "easyFF"
+name = "easyff"
 version = "0.1.7"
 description = "A audio video kits app"
 authors = ["you"]

@@ -2,7 +2,7 @@
 set -euo pipefail
 TAURI_SIGNING_PRIVATE_KEY_PASSWORD=llll
 KEY_PATH="${TAURI_KEY_PATH:-/Users/haolin/Developer/luke-simth/keys/tauri_private_1.key}"
-DMG_PATH="${1:-/Users/haolin/Downloads/easyFF_0.1.0-1_aarch64.dmg}"
+DMG_PATH="${1:-/Users/haolin/Downloads/easyff_0.1.0-1_aarch64.dmg}"
 
 if [[ ! -f "$KEY_PATH" ]]; then
   echo "Private key file not found: $KEY_PATH" >&2

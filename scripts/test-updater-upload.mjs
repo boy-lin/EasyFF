@@ -66,7 +66,7 @@ Options:
   --content-type <mime>   default: application/octet-stream
 
 Examples:
-  node scripts/test-updater-upload.mjs --file src-tauri/target/aarch64-apple-darwin/release/bundle/macos/easyFF.app.tar.gz
+  node scripts/test-updater-upload.mjs --file src-tauri/target/aarch64-apple-darwin/release/bundle/macos/easyff.app.tar.gz
   node scripts/test-updater-upload.mjs --file ./a.dmg --type installer --platform darwin-aarch64
 `);
   process.exit(code);
