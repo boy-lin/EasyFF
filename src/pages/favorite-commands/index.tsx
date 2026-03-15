@@ -235,7 +235,7 @@ export default function FavoriteCommandsPage() {
           <Button
             variant="ghost"
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-            className="h-auto p-0 hover:bg-transparent"
+            className="h-auto p-0"
           >
             {t("favoriteCommandsPage.table.title")}
             <ArrowUpDown className="ml-2 h-4 w-4" />
@@ -257,7 +257,7 @@ export default function FavoriteCommandsPage() {
         accessorKey: "command",
         header: t("favoriteCommandsPage.table.command"),
         cell: ({ row }) => (
-            <EllipsisName name={row.original.command} startCount={20} />
+          <EllipsisName name={row.original.command} startCount={20} />
         ),
         enableSorting: false,
       },
@@ -268,7 +268,7 @@ export default function FavoriteCommandsPage() {
             variant="ghost"
             size="sm"
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-            className="h-auto p-0 hover:bg-transparent"
+            className="h-auto p-0"
           >
             {t("favoriteCommandsPage.table.updated_at")}
             <ArrowUpDown className="ml-2 h-4 w-4" />
@@ -350,7 +350,7 @@ export default function FavoriteCommandsPage() {
           </div>
         </CardHeader>
 
-      <CardContent className="px-4 relative min-h-0 flex-1 overflow-auto">
+        <CardContent className="px-4 relative min-h-0 flex-1 overflow-auto">
           <Table className="min-w-[1100px]" wrapperClassName="rounded-lg border">
             <TableHeader className="bg-muted/50">
               {table.getHeaderGroups().map((headerGroup) => (
@@ -358,11 +358,10 @@ export default function FavoriteCommandsPage() {
                   {headerGroup.headers.map((header) => (
                     <TableHead
                       key={header.id}
-                      className={`px-4 py-3 font-medium ${
-                        header.column.id === "actions"
+                      className={`px-4 py-3 font-medium ${header.column.id === "actions"
                           ? "sticky right-0 z-20 min-w-[180px] bg-muted/95 shadow-[-8px_0_8px_-8px_hsl(var(--border))]"
                           : ""
-                      }`}
+                        }`}
                     >
                       {header.isPlaceholder
                         ? null
@@ -379,11 +378,10 @@ export default function FavoriteCommandsPage() {
                   {row.getVisibleCells().map((cell) => (
                     <TableCell
                       key={cell.id}
-                      className={`px-4 py-3 align-middle ${
-                        cell.column.id === "actions"
+                      className={`px-4 py-3 align-middle ${cell.column.id === "actions"
                           ? "sticky right-0 z-10 min-w-[180px] bg-background shadow-[-8px_0_8px_-8px_hsl(var(--border))]"
                           : ""
-                      }`}
+                        }`}
                     >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>

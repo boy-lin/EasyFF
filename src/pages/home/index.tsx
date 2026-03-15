@@ -142,15 +142,8 @@ export default function Home() {
 
     const parsed = parseCommandText(trimmed);
     setInputPaths(parsed.inputPaths);
-
-    if (!outputDir || parsed.inputPaths.length === 0) {
-      setResolvedOutputPath(parsed.outputPaths[0] ?? "");
-      return;
-    }
-
-    const rebuilt = buildCommandText(trimmed, parsed.inputPaths, outputDir);
-    setResolvedOutputPath(rebuilt.outputPath);
-  }, [commandText, outputDir, settingsLoading]);
+    setResolvedOutputPath(parsed.outputPaths[0] ?? "");
+  }, [commandText, settingsLoading]);
 
   useEffect(() => {
     if (!outputDir || inputPaths.length === 0) return;

@@ -24,21 +24,17 @@ export const useFavoriteSyncStore = create<FavoriteSyncState>((set, get) => ({
 
   syncNow: async (options) => {
     if (!hasDesktopAccessToken()) {
-      console.info("[favorite-sync] syncNow:skip_no_token");
       return null;
     }
 
     if (inflightSync) {
-      console.info("[favorite-sync] syncNow:reuse_inflight");
       return inflightSync;
     }
 
-    console.info("[favorite-sync] syncNow:start", { silent: Boolean(options?.silent) });
     set({ syncing: true, syncError: null });
     inflightSync = (async () => {
       try {
         const result = await syncFavoriteCommandsNow();
-        console.info("[favorite-sync] syncNow:success", result);
         set({
           syncing: false,
           lastSyncAt: Date.now(),
@@ -48,7 +44,6 @@ export const useFavoriteSyncStore = create<FavoriteSyncState>((set, get) => ({
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "favorite sync failed";
-        console.error("[favorite-sync] syncNow:error", { message, error });
         set({ syncing: false, syncError: message });
         if (!options?.silent) {
           throw error;
@@ -66,10 +61,8 @@ export const useFavoriteSyncStore = create<FavoriteSyncState>((set, get) => ({
     if (syncTimer !== null) {
       window.clearTimeout(syncTimer);
     }
-    console.info("[favorite-sync] scheduleSync", { delayMs });
     syncTimer = window.setTimeout(() => {
       syncTimer = null;
-      console.info("[favorite-sync] scheduleSync:fire");
       get()
         .syncNow({ silent: true })
         .catch(() => undefined);
