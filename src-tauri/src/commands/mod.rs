@@ -976,6 +976,19 @@ pub struct FfmpegDownloadProgressEvent {
 static CANCELED_FFMPEG_DOWNLOADS: LazyLock<Mutex<HashSet<String>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
 
+fn is_ffmpeg_download_canceled(row_key: &str) -> bool {
+    CANCELED_FFMPEG_DOWNLOADS
+        .lock()
+        .map(|set| set.contains(row_key))
+        .unwrap_or(false)
+}
+
+fn clear_ffmpeg_download_canceled(row_key: &str) {
+    if let Ok(mut canceled) = CANCELED_FFMPEG_DOWNLOADS.lock() {
+        canceled.remove(row_key);
+    }
+}
+
 fn sanitize_file_name(name: &str) -> String {
     let mut out = String::with_capacity(name.len());
     for ch in name.chars() {
@@ -1232,9 +1245,7 @@ pub async fn download_ffmpeg_version(app: AppHandle, row_key: String) -> Result<
     crate::storage::ffmpeg_versions::set_download_state(row_key.as_str(), "downloading")
         .await
         .map_err(|e| e.to_string())?;
-    if let Ok(mut canceled) = CANCELED_FFMPEG_DOWNLOADS.lock() {
-        canceled.remove(row_key.as_str());
-    }
+    clear_ffmpeg_download_canceled(row_key.as_str());
 
     let app_handle = app.clone();
     let row_key_cloned = row_key.clone();
@@ -1273,11 +1284,7 @@ pub async fn download_ffmpeg_version(app: AppHandle, row_key: String) -> Result<
             );
 
             loop {
-                let is_canceled = CANCELED_FFMPEG_DOWNLOADS
-                    .lock()
-                    .map(|set| set.contains(row_key_cloned.as_str()))
-                    .unwrap_or(false);
-                if is_canceled {
+                if is_ffmpeg_download_canceled(row_key_cloned.as_str()) {
                     let _ = fs::remove_file(&target_path);
                     return Err("download canceled".to_string());
                 }
@@ -1302,6 +1309,11 @@ pub async fn download_ffmpeg_version(app: AppHandle, row_key: String) -> Result<
                 );
             }
 
+            if is_ffmpeg_download_canceled(row_key_cloned.as_str()) {
+                let _ = fs::remove_file(&target_path);
+                return Err("download canceled".to_string());
+            }
+
             let _ = app_handle.emit(
                 "ffmpeg-download-progress",
                 FfmpegDownloadProgressEvent {
@@ -1312,6 +1324,12 @@ pub async fn download_ffmpeg_version(app: AppHandle, row_key: String) -> Result<
                     status: "completed".to_string(),
                 },
             );
+
+            if is_ffmpeg_download_canceled(row_key_cloned.as_str()) {
+                let _ = fs::remove_file(&target_path);
+                return Err("download canceled".to_string());
+            }
+
             let executable = resolve_ffmpeg_binary_from_download(
                 target_path.as_path(),
                 target_dir.as_path(),
@@ -1332,6 +1350,7 @@ pub async fn download_ffmpeg_version(app: AppHandle, row_key: String) -> Result<
             };
             let _ =
                 crate::storage::ffmpeg_versions::set_download_state(row_key.as_str(), state).await;
+            clear_ffmpeg_download_canceled(row_key.as_str());
             return Err(err);
         }
     };
@@ -1339,9 +1358,7 @@ pub async fn download_ffmpeg_version(app: AppHandle, row_key: String) -> Result<
     crate::storage::ffmpeg_versions::mark_downloaded(row_key.as_str(), path.as_str())
         .await
         .map_err(|e| e.to_string())?;
-    if let Ok(mut canceled) = CANCELED_FFMPEG_DOWNLOADS.lock() {
-        canceled.remove(row_key.as_str());
-    }
+    clear_ffmpeg_download_canceled(row_key.as_str());
 
     Ok(path)
 }

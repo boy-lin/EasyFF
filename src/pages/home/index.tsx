@@ -30,7 +30,7 @@ import { useFfmpegStore } from "@/stores/ffmpegStore";
 import { useFavoriteSyncStore } from "@/stores/favoriteSyncStore";
 import { FfmpegRuntimeStatus } from "@/components/ffmpeg/FfmpegRuntimeStatus";
 import { VirtualLogViewer } from "@/components/cli-logs/VirtualLogViewer";
-import { buildCommandText } from "@/pages/home/lib/commandComposer";
+import { buildCommandText, parseCommandText } from "@/pages/home/lib/commandComposer";
 import { useCliTaskRunner } from "@/pages/home/hooks/useCliTaskRunner";
 import { useTranslation } from "react-i18next";
 
@@ -129,6 +129,31 @@ export default function Home() {
     nextParams.delete("commandText");
     setSearchParams(nextParams, { replace: true });
   }, [searchParams, setHomeCommandText, setSearchParams]);
+
+  useEffect(() => {
+    if (settingsLoading) return;
+
+    const trimmed = commandText.trim();
+    if (!trimmed) {
+      setInputPaths([]);
+      setResolvedOutputPath("");
+      return;
+    }
+
+    const parsed = parseCommandText(trimmed);
+    setInputPaths(parsed.inputPaths);
+
+    if (!outputDir || parsed.inputPaths.length === 0) {
+      setResolvedOutputPath(parsed.outputPaths[0] ?? "");
+      return;
+    }
+
+    const rebuilt = buildCommandText(trimmed, parsed.inputPaths, outputDir);
+    setResolvedOutputPath(rebuilt.outputPath);
+    if (rebuilt.text !== trimmed) {
+      setHomeCommandText(rebuilt.text);
+    }
+  }, [commandText, outputDir, setHomeCommandText, settingsLoading]);
 
   useEffect(() => {
     if (!outputDir || inputPaths.length === 0) return;
@@ -316,7 +341,7 @@ export default function Home() {
           {t("homePage.labels.output")}: {outputDir || t("homePage.labels.not_selected")}
         </p> */}
         <div className="space-y-1">
-          
+
           <div className="flex items-center gap-1 text-xs">
             <span className=" text-muted-foreground whitespace-nowrap">
               {t("homePage.labels.status")}
@@ -346,7 +371,7 @@ export default function Home() {
             backToBottomText={t("homePage.viewer.back_to_bottom")}
           />
         </div>
-       
+
       </section>
 
       <Card>

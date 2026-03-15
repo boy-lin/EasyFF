@@ -136,3 +136,43 @@ export function buildCommandText(
   const text = [command, ...nextArgs.map(quoteArg)].join(" ");
   return { text, outputPath };
 }
+
+export function parseCommandText(raw: string): {
+  command: string;
+  inputPaths: string[];
+  outputPaths: string[];
+} {
+  const tokens = splitCommand(raw);
+  if (tokens.length === 0) {
+    return { command: "", inputPaths: [], outputPaths: [] };
+  }
+
+  const command = tokens[0] ?? "";
+  const args = tokens.slice(1);
+  const inputPaths: string[] = [];
+  const outputPaths: string[] = [];
+
+  for (let i = 0; i < args.length; i += 1) {
+    const token = args[i];
+
+    if (token === "-i") {
+      const next = args[i + 1];
+      if (next) {
+        inputPaths.push(next);
+        i += 1;
+      }
+      continue;
+    }
+
+    if (token.startsWith("-")) {
+      if (optionTakesValue(token) && i + 1 < args.length) {
+        i += 1;
+      }
+      continue;
+    }
+
+    outputPaths.push(token);
+  }
+
+  return { command, inputPaths, outputPaths };
+}
