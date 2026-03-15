@@ -150,10 +150,7 @@ export default function Home() {
 
     const rebuilt = buildCommandText(trimmed, parsed.inputPaths, outputDir);
     setResolvedOutputPath(rebuilt.outputPath);
-    if (rebuilt.text !== trimmed) {
-      setHomeCommandText(rebuilt.text);
-    }
-  }, [commandText, outputDir, setHomeCommandText, settingsLoading]);
+  }, [commandText, outputDir, settingsLoading]);
 
   useEffect(() => {
     if (!outputDir || inputPaths.length === 0) return;

@@ -37,6 +37,14 @@ const DEFAULT_BATCH_SIZE = 200;
 const MAX_RETRY_TIMES = 5;
 const RETRY_BASE_DELAY_MS = 1000;
 
+function logFavoriteSync(message: string, meta?: Record<string, unknown>) {
+  if (meta) {
+    console.info(`[favorite-sync] ${message} ${JSON.stringify(meta)}`);
+    return;
+  }
+  console.info(`[favorite-sync] ${message}`);
+}
+
 function assertApiBase() {
   if (!baseApiUrl) {
     throw new Error("VITE_BASE_API_URL is not configured");
@@ -50,6 +58,7 @@ function buildAuthHeaders(): HeadersInit {
 
 async function postApi<T>(path: string, body: Record<string, unknown>): Promise<T> {
   assertApiBase();
+  logFavoriteSync("request:start", { path, body });
   const response = await fetch(`${baseApiUrl}${path}`, {
     method: "POST",
     credentials: "include",
@@ -61,13 +70,16 @@ async function postApi<T>(path: string, body: Record<string, unknown>): Promise<
   });
 
   if (!response.ok) {
+    logFavoriteSync("request:http_error", { path, status: response.status });
     throw new Error(`favorite sync request failed: ${response.status}`);
   }
 
   const json = (await response.json()) as ApiResponse<T>;
   if (json.code !== 0) {
+    logFavoriteSync("request:api_error", { path, code: json.code, message: json.message });
     throw new Error(json.message || "favorite sync api failed");
   }
+  logFavoriteSync("request:success", { path, code: json.code });
   return json.data as T;
 }
 
@@ -141,6 +153,11 @@ function toLocalFavoriteItem(raw: ServerFavoriteItem): FavoriteCommandItem {
 
 export async function pushFavoriteCommands(deviceId: string): Promise<number> {
   const pending = await bridge.listPendingFavoriteCommandSync(1000);
+  logFavoriteSync("push:pending_loaded", {
+    deviceId,
+    pendingCount: pending.length,
+    pendingIds: pending.map((item) => item.id),
+  });
   if (!pending.length) return 0;
 
   const sent = await postApiWithRetry<{
@@ -167,13 +184,19 @@ export async function pushFavoriteCommands(deviceId: string): Promise<number> {
         }))
       : pending.map(toServerAck);
 
+  logFavoriteSync("push:ack_received", {
+    ackCount: acks.length,
+    ackIds: acks.map((item) => item.id),
+  });
   await bridge.markFavoriteCommandsSynced(acks);
+  logFavoriteSync("push:mark_synced_done", { ackCount: acks.length });
   return acks.length;
 }
 
 export async function pullFavoriteCommandsChanges(): Promise<number> {
   let cursor = await bridge.getFavoriteCommandSyncCursor();
   let total = 0;
+  logFavoriteSync("pull:start", { cursor });
 
   while (true) {
     const data = await postApiWithRetry<FavoriteChangePayload>("/api/app/favorite/commands/changes", {
@@ -182,15 +205,28 @@ export async function pullFavoriteCommandsChanges(): Promise<number> {
     });
 
     const changes = (data?.changes || []).map((row) => toLocalFavoriteItem(row as ServerFavoriteItem));
+    logFavoriteSync("pull:batch_loaded", {
+      cursor,
+      nextCursor: Number(data?.next_cursor || cursor),
+      hasMore: Boolean(data?.has_more),
+      changeCount: changes.length,
+      changeIds: changes.map((item) => item.id),
+      deletedIds: changes.filter((item) => item.deletedAt != null).map((item) => item.id),
+    });
     if (changes.length > 0) {
       await bridge.applyRemoteFavoriteCommandChanges(changes);
       total += changes.length;
+      logFavoriteSync("pull:batch_applied", {
+        appliedCount: changes.length,
+        totalApplied: total,
+      });
     }
 
     const nextCursor = Number(data?.next_cursor || cursor);
     if (nextCursor > cursor) {
       await bridge.setFavoriteCommandSyncCursor(nextCursor);
       cursor = nextCursor;
+      logFavoriteSync("pull:cursor_updated", { cursor });
     }
 
     if (!data?.has_more) {
@@ -198,12 +234,15 @@ export async function pullFavoriteCommandsChanges(): Promise<number> {
     }
   }
 
+  logFavoriteSync("pull:done", { total });
   return total;
 }
 
 export async function syncFavoriteCommandsNow(): Promise<{ pushed: number; pulled: number }> {
   const deviceId = await bridge.getDeviceId();
+  logFavoriteSync("sync:start", { deviceId });
   const pushed = await pushFavoriteCommands(deviceId);
   const pulled = await pullFavoriteCommandsChanges();
+  logFavoriteSync("sync:done", { deviceId, pushed, pulled });
   return { pushed, pulled };
 }
